@@ -20,7 +20,9 @@ const QUERIES = [
 // Hanya berita yang judulnya menyebut Aceh / wilayah di Aceh, atau dari media lokal Aceh.
 const ACEH_PLACES = /\b(aceh|banda aceh|lhokseumawe|langsa|sabang|meulaboh|takengon|bireuen|sigli|pidie|simeulue|tamiang|singkil|subulussalam|nagan raya|gayo|blangpidie|calang|jantho|kutacane|lhoksukon|idi rayeuk|tapaktuan|suka makmue|redelong|blangkejeren|kpwbi aceh)\b/i;
 const ACEH_MEDIA = /(serambi|aceh|ajnn|kba\.one|habadaily|lintasgayo|rri banda aceh|rri takengon|rri meulaboh|rri sabang|portalsatu|dialeksis|theacehpost|nukilan)/i;
-const isAceh = (it) => ACEH_PLACES.test(it.title) || ACEH_MEDIA.test(it.source || "");
+// ...dan judulnya harus menyangkut ekonomi / BI (buang berita cuaca, olahraga, dll.)
+const ECON = /\b(bank|bi|kpwbi|qris|inflasi|harga|umkm|uang|rupiah|kredit|ekonomi|syariah|halal|pembayaran|cabai|beras|bawang|pangan|sembako|bunga|cicilan|pembiayaan|digital|digitalisasi|tpid|daya beli|transaksi|keuangan|investasi|ekspor|pasar|komoditas|bi-fast|tp2dd|etpd|meuseuraya|cbpr|kas keliling|penukaran)\b/i;
+const isAceh = (it) => (ACEH_PLACES.test(it.title) || ACEH_MEDIA.test(it.source || "")) && ECON.test(it.title);
 
 const decode = (s) =>
   String(s || "")
