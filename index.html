@@ -315,8 +315,11 @@ const NEWS = [
   ["2026-02-15","Republika","BI siapkan Rp185,6 triliun untuk kebutuhan Ramadhan dan Idul Fitri 2026","https://ekonomi.republika.co.id/berita/tahij4423/bi-siapkan-rp-1856-triliun-untuk-kebutuhan-ramadhan-dan-idul-fitri-2026"],
   ["2026-02-11","Bisnis.com","Kriteria UMKM terdampak banjir Aceh-Sumatra yang dapat restrukturisasi kredit","https://ekonomi.bisnis.com/read/20260211/12/1952225/kriteria-umkm-terdampak-banjir-aceh-sumatra-yang-dapat-restrukturisasi-kredit"],
 ];
+const ACEH_RE = /\b(aceh|banda aceh|lhokseumawe|langsa|sabang|meulaboh|takengon|bireuen|sigli|pidie|simeulue|tamiang|singkil|subulussalam|nagan raya|gayo|blangpidie|calang|jantho|kutacane|lhoksukon|idi rayeuk|tapaktuan|suka makmue|redelong|blangkejeren)\b/i;
+const ACEH_MEDIA_RE = /(serambi|aceh|ajnn|kba\.one|habadaily|lintasgayo|rri banda aceh|rri takengon|rri meulaboh|rri sabang|portalsatu|dialeksis|nukilan)/i;
+const isAceh = (title, src) => ACEH_RE.test(title) || ACEH_MEDIA_RE.test(src || "");
 function makeNews() {
-  return NEWS.map(([d, outlet, title, url, approx], i) => ({ id: 10000 + i, source: "news", outlet, author: outlet, text: title, url, approx: !!approx, real: true, date: new Date(d + "T09:00:00"), keyword: "", ...analyze(title) }));
+  return NEWS.filter((r) => isAceh(r[2], r[1])).map(([d, outlet, title, url, approx], i) => ({ id: 10000 + i, source: "news", outlet, author: outlet, text: title, url, approx: !!approx, real: true, date: new Date(d + "T09:00:00"), keyword: "", ...analyze(title) }));
 }
 const PHRASES = Object.entries({ ...POS, ...NEG }).filter(([k]) => k.includes(" ")).sort((a, b) => b[0].length - a[0].length);
 function normalize(t) { return t.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^\p{L}\p{N}\s\-]/gu, " ").replace(/\s+/g, " ").trim(); }
@@ -564,7 +567,7 @@ function renderIssues(list) {
 function setNotice() {
   const n = $("dataNoticeText"), box = $("dataNotice");
   box.style.borderColor = MODE === "demo" ? "" : "var(--accent)";
-  if (MODE === "news") n.innerHTML = `<strong style="color:var(--accent)">Berita nyata · ${REAL.length} artikel.</strong> Judul berita Aceh dari Antara Aceh, Republika, Databoks, RRI, Kontan, Bisnis.com dan Google News. Sentimen dinilai dari judul; klik judul untuk membaca artikel. ${LIVE.last ? `Terakhir disegarkan dari Google News ${LIVE.last.toLocaleTimeString("id-ID")}.` : "Snapshot 8 Okt 2026; tekan Refresh data untuk mengambil berita terbaru."}`;
+  if (MODE === "news") n.innerHTML = `<strong style="color:var(--accent)">Berita nyata · ${REAL.length} artikel.</strong> Hanya berita yang menyebut Aceh atau wilayah di Aceh, dari media lokal dan nasional lewat Google News. Sentimen dinilai dari judul; klik judul untuk membaca artikel. ${LIVE.last ? `Terakhir disegarkan dari Google News ${LIVE.last.toLocaleTimeString("id-ID")}.` : "Snapshot 8 Okt 2026; tekan Refresh data untuk mengambil berita terbaru."}`;
   else if (MODE === "demo") n.innerHTML = `<strong>Data demo sintetis.</strong> ${DEMO.length} post medsos dibangkitkan dari template <span class="mono">dummy_data.py</span>, termasuk contoh kata kunci isu negatif. Bukan percakapan nyata.`;
   else if (MODE === "mix") n.innerHTML = `<strong>Gabungan.</strong> ${REAL.length} berita nyata + ${DEMO.length} post demo sintetis. Angka di bawah mencampur keduanya, gunakan untuk melihat tampilan saja.`;
   else n.innerHTML = UPLOADED.note;
@@ -641,7 +644,7 @@ async function refreshNews(silent) {
     let added = 0;
     const fresh = [];
     data.items.forEach((it, i) => {
-      const k = normTitle(it.title); if (!k || seen.has(k)) return; seen.add(k);
+      const k = normTitle(it.title); if (!k || seen.has(k) || !isAceh(it.title, it.source)) return; seen.add(k);
       const d = new Date(it.pubDate); const id = 20000 + REAL.length + fresh.length;
       fresh.push({ id, source: "news", outlet: it.source || "Google News", author: it.source || "Google News", text: it.title, url: it.link, real: true, live: true, date: isNaN(d) ? new Date() : d, keyword: it.query || "", ...analyze(it.title) });
       LIVE.newIds.add(id); added++;
