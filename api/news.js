@@ -3,19 +3,24 @@
 // Cache di edge 5 menit supaya tidak membebani Google News saat banyak pengunjung.
 
 const QUERIES = [
-  '"Bank Indonesia Aceh" OR "BI Aceh" OR "KPwBI Aceh" OR "BI Banda Aceh"',
-  '"QRIS Aceh" OR "QRIS Banda Aceh"',
-  '"inflasi Aceh" OR "TPID Aceh" OR "harga pangan Aceh"',
-  '"UMKM Aceh" OR "ekonomi syariah Aceh" OR "ekonomi Aceh"',
-  '"penukaran uang" Aceh OR "kas keliling" Aceh OR "uang palsu" Aceh',
-  // Isu negatif (dipendekkan ke kombinasi OR agar tetap dalam batas panjang kueri)
-  '"kecewa BI Aceh" OR "keluhan BI Aceh" OR "komplain BI Aceh" OR "kritik BI Aceh" OR "protes BI Aceh" OR "pelayanan BI Aceh"',
-  '"QRIS error" OR "QRIS gagal" OR "QRIS down" OR "transaksi QRIS gagal" OR "refund QRIS" OR "potongan QRIS" OR "biaya QRIS"',
-  '"susah tukar uang" OR "antrian penukaran uang" OR "kehabisan uang baru" OR "uang rusak" OR "penukaran uang gagal"',
-  '"harga beras naik" Aceh OR "harga cabai naik" Aceh OR "inflasi Aceh tinggi" OR "daya beli turun" Aceh',
-  '"BI Rate naik" OR "suku bunga naik" OR "bunga kredit naik" OR "kebijakan BI"',
-  '"UMKM sulit" Aceh OR "kredit UMKM" Aceh OR "pembiayaan UMKM" Aceh OR "bantuan UMKM" Aceh',
+  'Aceh ("Bank Indonesia" OR "BI Aceh" OR "KPwBI" OR "BI Banda Aceh")',
+  'Aceh (QRIS OR "sistem pembayaran" OR "BI-FAST" OR digitalisasi)',
+  'Aceh (inflasi OR TPID OR "harga pangan" OR "harga beras" OR "harga cabai" OR "harga bawang")',
+  'Aceh (UMKM OR "ekonomi syariah" OR "keuangan syariah" OR "ekonomi Aceh")',
+  'Aceh ("penukaran uang" OR "kas keliling" OR "uang palsu" OR "uang rusak" OR "uang baru")',
+  // Isu negatif — tetap diikat ke Aceh
+  'Aceh (kecewa OR keluhan OR komplain OR kritik OR protes) ("BI" OR "Bank Indonesia")',
+  'Aceh ("QRIS error" OR "QRIS gagal" OR "QRIS down" OR "QRIS bermasalah" OR "refund QRIS" OR "potongan QRIS" OR "biaya QRIS")',
+  'Aceh ("susah tukar uang" OR "antrian penukaran" OR "kehabisan uang" OR "penukaran uang gagal" OR "tidak kebagian")',
+  'Aceh ("inflasi tinggi" OR "harga naik" OR "daya beli turun" OR "harga sembako" OR "kebutuhan pokok mahal")',
+  'Aceh ("BI Rate" OR "suku bunga" OR "bunga kredit" OR "cicilan" OR "kredit mahal")',
+  'Aceh ("UMKM sulit" OR "kredit UMKM" OR "pembiayaan UMKM" OR "bantuan UMKM" OR "akses kredit")',
 ];
+
+// Hanya berita yang judulnya menyebut Aceh / wilayah di Aceh, atau dari media lokal Aceh.
+const ACEH_PLACES = /\b(aceh|banda aceh|lhokseumawe|langsa|sabang|meulaboh|takengon|bireuen|sigli|pidie|simeulue|tamiang|singkil|subulussalam|nagan raya|gayo|blangpidie|calang|jantho|kutacane|lhoksukon|idi rayeuk|tapaktuan|suka makmue|redelong|blangkejeren|kpwbi aceh)\b/i;
+const ACEH_MEDIA = /(serambi|aceh|ajnn|kba\.one|habadaily|lintasgayo|rri banda aceh|rri takengon|rri meulaboh|rri sabang|portalsatu|dialeksis|theacehpost|nukilan)/i;
+const isAceh = (it) => ACEH_PLACES.test(it.title) || ACEH_MEDIA.test(it.source || "");
 
 const decode = (s) =>
   String(s || "")
@@ -54,7 +59,7 @@ module.exports = async (req, res) => {
     if (r.status === "rejected") { errors.push({ query: QUERIES[i], error: String(r.reason && r.reason.message || r.reason) }); return; }
     for (const it of r.value) {
       const key = it.title.toLowerCase().replace(/\s+/g, " ").slice(0, 90);
-      if (!it.title || seen.has(key)) continue;
+      if (!it.title || seen.has(key) || !isAceh(it)) continue;
       seen.add(key); items.push(it);
     }
   });
@@ -71,3 +76,4 @@ module.exports = async (req, res) => {
 };
 
 module.exports.parseRss = parseRss;
+module.exports.isAceh = isAceh;
