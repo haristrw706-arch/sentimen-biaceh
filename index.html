@@ -317,6 +317,7 @@ const NEWS = [
 ];
 const ACEH_RE = /\b(aceh|banda aceh|lhokseumawe|langsa|sabang|meulaboh|takengon|bireuen|sigli|pidie|simeulue|tamiang|singkil|subulussalam|nagan raya|gayo|blangpidie|calang|jantho|kutacane|lhoksukon|idi rayeuk|tapaktuan|suka makmue|redelong|blangkejeren)\b/i;
 const ACEH_MEDIA_RE = /(serambi|aceh|ajnn|kba\.one|habadaily|lintasgayo|rri banda aceh|rri takengon|rri meulaboh|rri sabang|portalsatu|dialeksis|nukilan)/i;
+const ECON_RE = /\b(bank|bi|kpwbi|qris|inflasi|harga|umkm|uang|rupiah|kredit|ekonomi|syariah|halal|pembayaran|cabai|beras|bawang|pangan|sembako|bunga|cicilan|pembiayaan|digital|digitalisasi|tpid|daya beli|transaksi|keuangan|investasi|ekspor|pasar|komoditas|bi-fast|tp2dd|etpd|meuseuraya|cbpr|kas keliling|penukaran)\b/i;
 const isAceh = (title, src) => ACEH_RE.test(title) || ACEH_MEDIA_RE.test(src || "");
 function makeNews() {
   return NEWS.filter((r) => isAceh(r[2], r[1])).map(([d, outlet, title, url, approx], i) => ({ id: 10000 + i, source: "news", outlet, author: outlet, text: title, url, approx: !!approx, real: true, date: new Date(d + "T09:00:00"), keyword: "", ...analyze(title) }));
@@ -644,7 +645,7 @@ async function refreshNews(silent) {
     let added = 0;
     const fresh = [];
     data.items.forEach((it, i) => {
-      const k = normTitle(it.title); if (!k || seen.has(k) || !isAceh(it.title, it.source)) return; seen.add(k);
+      const k = normTitle(it.title); if (!k || seen.has(k) || !isAceh(it.title, it.source) || !ECON_RE.test(it.title)) return; seen.add(k);
       const d = new Date(it.pubDate); const id = 20000 + REAL.length + fresh.length;
       fresh.push({ id, source: "news", outlet: it.source || "Google News", author: it.source || "Google News", text: it.title, url: it.link, real: true, live: true, date: isNaN(d) ? new Date() : d, keyword: it.query || "", ...analyze(it.title) });
       LIVE.newIds.add(id); added++;
