@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="live-api" content="/api/news">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Pantau Sentimen BI Aceh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: sticky top bar with live-refresh control; filter strip → KPI row → issue grid → 2-col charts → table → network */
+:root{
+  --bg:#f3f5f6; --surface:#ffffff; --surface-2:#eaeef0; --line:#d5dde1;
+  --fg:#14232b; --muted:#5b6d76; --accent:#0d5c75; --accent-soft:#d6e9ef;
+  --pos:#1f8a5b; --neg:#c8453b; --neu:#8193a0; --warn:#b7791f;
+  --pos-soft:#dcf1e6; --neg-soft:#f8e0dd; --neu-soft:#e6ebee;
+  --f-display:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e171c; --surface:#152229; --surface-2:#1c2c34; --line:#2a3d47;
+  --fg:#e3ecef; --muted:#93a7b1; --accent:#5fb6d3; --accent-soft:#183a47;
+  --pos:#4cc48a; --neg:#ef7b70; --neu:#8fa2ae; --warn:#e2a74a;
+  --pos-soft:#173a2b; --neg-soft:#43221f; --neu-soft:#24333b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e171c; --surface:#152229; --surface-2:#1c2c34; --line:#2a3d47;
+  --fg:#e3ecef; --muted:#93a7b1; --accent:#5fb6d3; --accent-soft:#183a47;
+  --pos:#4cc48a; --neg:#ef7b70; --neu:#8fa2ae; --warn:#e2a74a;
+  --pos-soft:#173a2b; --neg-soft:#43221f; --neu-soft:#24333b; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5}
+.wrap{max-width:1320px;margin:0 auto;padding-inline:20px;padding-block:0 48px}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.top-in{max-width:1320px;margin:0 auto;padding:12px 20px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;gap:0}
+.brand small{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.brand b{font-family:var(--f-display);font-size:18px;font-weight:800;letter-spacing:-.01em}
+.live{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.live-dot{width:9px;height:9px;border-radius:50%;background:var(--neu);flex:none}
+.live-dot.on{background:var(--pos);box-shadow:0 0 0 0 var(--pos);animation:pulse 2s infinite}
+.live-dot.err{background:var(--warn)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--pos) 60%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.live-txt{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.modal-bg{position:fixed;inset:0;background:color-mix(in srgb,var(--fg) 40%,transparent);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:12px;width:min(480px,100%);max-height:90vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.modal h2{font-size:17px}
+.modal p{margin:0;color:var(--muted);font-size:13px}
+.modal .row-b{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.switch{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;cursor:pointer}
+.switch input{width:18px;height:18px;accent-color:var(--accent)}
+.log{font-family:var(--f-mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:150px;overflow:auto;white-space:pre-wrap;color:var(--muted)}
+.toast{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:15;background:var(--fg);color:var(--bg);border-radius:10px;padding:12px 14px;display:flex;gap:12px;align-items:center;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:calc(100% - 32px)}
+.toast button{background:var(--bg);color:var(--fg);border:0;border-radius:6px;padding:6px 10px;font:600 12px var(--f-body);cursor:pointer}
+.pill.baru{background:var(--accent-soft);color:var(--accent);margin-left:6px}
+.tabs{display:flex;gap:4px;background:var(--surface-2);padding:4px;border-radius:999px}
+.tabs button{border:0;background:transparent;color:var(--muted);font:600 13px var(--f-body);padding:7px 16px;border-radius:999px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1{font-family:var(--f-display);font-size:26px;font-weight:800;letter-spacing:-.02em;margin:24px 0 2px;text-wrap:balance}
+h2{font-family:var(--f-display);font-size:15px;font-weight:700;margin:0;text-wrap:balance}
+.lede{color:var(--muted);margin:0 0 16px;max-width:70ch}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.notice{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;border:1px dashed var(--warn);color:var(--fg);background:color-mix(in srgb,var(--warn) 9%,var(--surface));border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:13px}
+.notice strong{color:var(--warn)}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:14px}
+.filters label,.ctl label{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:4px}
+select,input[type=text],input[type=date]{width:100%;font:500 13px var(--f-body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+.btn{font:600 13px var(--f-body);border-radius:7px;padding:8px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--fg);white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn:disabled{opacity:.45;cursor:default}
+.file-btn{position:relative;overflow:hidden;display:inline-block}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.kpi .k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.kpi .v{font-family:var(--f-mono);font-size:26px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi .s{font-size:12px;color:var(--muted)}
+.kpi.pos .v{color:var(--pos)} .kpi.neg .v{color:var(--neg)} .kpi.neu .v{color:var(--neu)}
+.meter{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--surface-2);margin-top:4px}
+.meter i{display:block;height:100%}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px}
+@media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.panel-h span{font-size:12px;color:var(--muted)}
+.chart-box{position:relative;height:260px}
+.topics{display:flex;flex-direction:column;gap:9px}
+.topic{display:grid;grid-template-columns:130px 1fr 42px;gap:10px;align-items:center;font-size:13px;cursor:pointer;border-radius:6px;padding:2px 4px}
+.topic:hover{background:var(--surface-2)}
+.topic.active{background:var(--accent-soft)}
+.topic .bar{display:flex;height:12px;border-radius:3px;overflow:hidden;background:var(--surface-2)}
+.topic .n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.cloud{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;justify-content:center;min-height:200px;align-content:center;padding:6px}
+.cloud span{font-weight:700;line-height:1.1;cursor:default}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.txt{min-width:280px;max-width:520px}
+td.mono,th.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.clickable{cursor:pointer} tr.clickable:hover td{background:var(--surface-2)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.positif{background:var(--pos-soft);color:var(--pos)} .pill.negatif{background:var(--neg-soft);color:var(--neg)} .pill.netral{background:var(--neu-soft);color:var(--neu)}
+.pill.naik{background:var(--pos-soft);color:var(--pos)} .pill.turun{background:var(--neg-soft);color:var(--neg)} .pill.stabil{background:var(--neu-soft);color:var(--neu)}
+.src{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--muted);gap:8px;flex-wrap:wrap}
+.detail{margin-top:6px;font-size:12px;color:var(--muted)}
+.sna-wrap{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:14px}
+@media (max-width:900px){.sna-wrap{grid-template-columns:minmax(0,1fr)}}
+#snaCanvas{width:100%;height:420px;display:block;background:var(--bg);border-radius:8px;border:1px solid var(--line)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.stat-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.stat-list div{background:var(--surface-2);border-radius:7px;padding:8px 10px}
+.stat-list b{display:block;font-family:var(--f-mono);font-size:17px;font-weight:500}
+.stat-list small{color:var(--muted);font-size:11px}
+.toplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
+.toplist li{display:flex;justify-content:space-between;gap:8px}
+.toplist li span:last-child{font-family:var(--f-mono);color:var(--muted)}
+.insight{border-left:3px solid var(--neu);background:var(--surface-2);border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:8px;font-size:13.5px;max-width:95ch}
+.insight.inverse{border-left-color:var(--warn)} .insight.positive{border-left-color:var(--pos)}
+.insight .t{font-weight:700;margin-bottom:3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end}
+.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+.mono{font-family:var(--f-mono)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+a{color:var(--accent)} td.txt a{color:var(--fg);text-decoration:none;font-weight:600} td.txt a:hover{color:var(--accent);text-decoration:underline}
+.hits{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.hits span{font-size:11px;font-weight:600;color:var(--neg);background:var(--neg-soft);border-radius:4px;padding:1px 6px}
+.issues{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.issue{border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0;cursor:pointer;background:var(--surface)}
+.issue:hover{border-color:var(--neg)}
+.issue.active{border-color:var(--neg);box-shadow:inset 0 0 0 1px var(--neg)}
+.issue.hot{background:color-mix(in srgb,var(--neg) 6%,var(--surface))}
+.issue-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.issue-top b{font-size:13px}
+.issue-top .num{font-family:var(--f-mono);font-size:20px;color:var(--neg)}
+.issue-top .num.zero{color:var(--neu)}
+.issue details summary{font-size:12px;color:var(--muted);cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chips a{font-size:11.5px;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--fg);background:var(--bg)}
+.chips a:hover{border-color:var(--accent);color:var(--accent)}
+.chips a.hit{border-color:var(--neg);color:var(--neg);font-weight:600}
+.issue .gn{font-size:12px;font-weight:600}
+@media (max-width:520px){.topic{grid-template-columns:96px 1fr 34px}.kpi .v{font-size:22px}h1{font-size:22px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><small>KPwBI · Monitoring</small><b>Pantau Sentimen BI Aceh</b></div>
+    <div class="live">
+      <span class="live-dot" id="liveDot"></span>
+      <span class="live-txt" id="liveTxt">Snapshot 8 Okt 2026</span>
+      <button class="btn primary" id="openRefresh">Refresh data</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+<!-- ============ SENTIMEN ============ -->
+<section id="paneSentimen">
+  <h1>Dashboard Sentimen KPwBI Aceh</h1>
+  <p class="lede">Berita dan percakapan publik tentang Bank Indonesia Aceh, QRIS, inflasi, UMKM, ekonomi syariah, dan program Meuseuraya. Sentimen dihitung dengan leksikon InSet seperti di backend proyek.</p>
+
+  <div class="notice" id="dataNotice">
+    <div id="dataNoticeText" style="flex:1 1 320px;min-width:0"></div>
+    <div class="row">
+      <div style="min-width:190px"><label for="fMode" class="sr">Sumber data</label><select id="fMode"><option value="news">Berita nyata</option><option value="demo">Demo medsos (sintetis)</option><option value="mix">Gabungan</option><option value="upload" disabled>File upload</option></select></div>
+      <span class="btn file-btn">Upload CSV/Excel<input type="file" id="postFile" accept=".csv,.xlsx,.xls"></span>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div><label for="fQ">Cari teks</label><input type="text" id="fQ" placeholder="mis. QRIS, inflasi"></div>
+    <div><label for="fSource">Platform</label><select id="fSource"></select></div>
+    <div><label for="fSent">Sentimen</label><select id="fSent"><option value="">Semua</option><option value="positif">Positif</option><option value="negatif">Negatif</option><option value="netral">Netral</option></select></div>
+    <div><label for="fTopic">Topik</label><select id="fTopic"></select></div>
+    <div><label for="fFrom">Dari</label><input type="date" id="fFrom"></div>
+    <div><label for="fTo">Sampai</label><input type="date" id="fTo"></div>
+    <div style="display:flex;align-items:end"><button class="btn" id="fReset" style="width:100%">Reset filter</button></div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="panel" style="margin-bottom:12px">
+    <div class="panel-h"><h2>Pemantauan isu negatif</h2><span>74 kata kunci dalam 7 kelompok · klik kartu untuk memfilter · tautan membuka Google News</span></div>
+    <div class="issues" id="issues"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><div class="panel-h"><h2>Tren sentimen mingguan</h2><span>jumlah mention per minggu</span></div><div class="chart-box"><canvas id="trendChart"></canvas></div></div>
+    <div class="panel"><div class="panel-h"><h2>Sentimen per platform</h2><span>klik batang untuk filter</span></div><div class="chart-box"><canvas id="platformChart"></canvas></div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><div class="panel-h"><h2>Ranking topik</h2><span>klik untuk fokus topik</span></div><div class="topics" id="topics"></div></div>
+    <div class="panel"><div class="panel-h"><h2>Word cloud</h2><span>warna = sentimen dominan kata</span></div><div class="cloud" id="cloud"></div></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:12px">
+    <div class="panel-h"><h2>Daftar post</h2><span id="postCount"></span></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Tanggal</th><th>Platform</th><th>Akun</th><th>Teks</th><th>Topik</th><th>Sentimen</th><th class="mono">Conf.</th></tr></thead><tbody id="postBody"></tbody></table></div>
+    <div class="pager"><span id="pageInfo"></span><div class="row"><button class="btn" id="prevPg">‹ Sebelumnya</button><button class="btn" id="nextPg">Berikutnya ›</button></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Sentiment Network Analysis</h2><span>akun ↔ topik ↔ platform; seret node untuk menggeser</span></div>
+    <div class="sna-wrap">
+      <div><canvas id="snaCanvas"></canvas>
+        <div class="legend"><span><i style="background:var(--pos)"></i>Klaster positif</span><span><i style="background:var(--neg)"></i>Klaster kritis</span><span><i style="background:var(--neu)"></i>Netral</span><span>● akun · ◆ topik · ■ platform</span></div>
+      </div>
+      <div><div class="stat-list" id="snaStats"></div><h2 style="font-size:13px;margin-bottom:6px">Node paling terhubung</h2><ul class="toplist" id="snaTop"></ul></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="modal-bg" id="refreshModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
+    <div class="row-b"><h2 id="rmTitle">Refresh data berita</h2><button class="btn" id="rmClose" aria-label="Tutup">Tutup</button></div>
+    <p id="rmMode"></p>
+    <div class="row-b">
+      <button class="btn primary" id="rmNow">Ambil berita terbaru sekarang</button>
+      <span class="live-txt" id="rmLast"></span>
+    </div>
+    <div class="row-b">
+      <label class="switch" for="rmAuto"><input type="checkbox" id="rmAuto"> Refresh otomatis</label>
+      <div style="min-width:150px"><label for="rmEvery" class="sr">Interval</label><select id="rmEvery"><option value="1">tiap 1 menit</option><option value="5" selected>tiap 5 menit</option><option value="15">tiap 15 menit</option><option value="30">tiap 30 menit</option></select></div>
+    </div>
+    <p>Sumber: Google News RSS (bahasa Indonesia) untuk kata kunci BI Aceh, QRIS, penukaran uang, inflasi, suku bunga, UMKM, dan 74 kata kunci isu negatif. Berita baru digabung dengan data yang ada tanpa duplikat.</p>
+    <div class="log" id="rmLog">Belum ada refresh di sesi ini.</div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden><span id="toastTxt"></span><button id="toastShow">Lihat</button><button id="toastX" aria-label="Tutup">✕</button></div>
+
+<script>
+/* ---------- utilities ---------- */
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const fmtDate = (d) => d.toISOString().slice(0, 10);
+const nf = new Intl.NumberFormat("id-ID");
+const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+
+/* ---------- lexicon (port of backend/app/services/lexicon.py) ---------- */
+const POS = { "baik":3,"bagus":3,"hebat":4,"mantap":4,"sukses":4,"berhasil":4,"positif":3,"mendukung":3,"dukung":3,"apresiasi":4,"puji":3,"senang":3,"gembira":3,"puas":3,"membantu":3,"manfaat":3,"bermanfaat":4,"efektif":3,"efisien":3,"lancar":3,"mudah":2,"praktis":3,"aman":3,"stabil":3,"tumbuh":3,"naik":2,"meningkat":3,"maju":3,"inovasi":3,"solusi":3,"terbaik":4,"unggul":4,"cerdas":3,"transparan":3,"akuntabel":3,"responsif":3,"cepat":2,"ramah":3,"profesional":3,"optimal":3,"maksimal":3,"sejahtera":4,"makmur":4,"pulih":3,"recovery":3,"dorong":2,"dorongan":2,"stimulus":2,"fasilitasi":3,"kolaborasi":3,"sinergi":3,"berprestasi":4,"apresiatif":3,"bagus sekali":5,"sangat baik":5,"luar biasa":5,"terima kasih":3,"semangat":3,"berkah":3,"amanah":3,"keren":3,"inovatif":4,"setuju":2,"terkendali":3,"modern":2 };
+const NEG = { "buruk":-3,"jelek":-3,"gagal":-4,"gagal total":-5,"negatif":-3,"kecewa":-4,"marah":-4,"kesal":-3,"komplain":-3,"keluhan":-3,"masalah":-2,"problematik":-3,"sulit":-2,"ribet":-3,"rumit":-2,"lambat":-3,"lama":-2,"mahal":-2,"rugi":-3,"merosot":-4,"turun":-2,"anjlok":-4,"inflasi tinggi":-4,"krisis":-5,"resesi":-5,"korupsi":-5,"tidak transparan":-4,"tidak jelas":-3,"bingung":-2,"frustrasi":-4,"kecewa berat":-5,"salah":-2,"keliru":-2,"tidak efektif":-4,"tidak membantu":-4,"sia-sia":-3,"hambatan":-3,"kendala":-2,"gangguan":-3,"error":-3,"gagal bayar":-5,"penipuan":-5,"scam":-5,"palsu":-4,"merugikan":-4,"beban":-2,"memberatkan":-3,"semrawut":-4,"chaos":-4,"kacau":-4,"parah":-4,"buruk sekali":-5,"susah":-2,"potongan":-2,"kejahatan":-5,"ancaman":-4,"rusak":-3,"lesu":-3,"elitis":-2,"kurang":-2,"mengganggu":-3,"ditolak":-3,"mengeluhkan":-3 };
+const TOPICS = { "inflasi":["inflasi","harga","ihk","tekanan harga","tpid"], "QRIS":["qris","qr code","pembayaran digital","cashless","bi-fast","bifast"], "UMKM":["umkm","usaha mikro","pengusaha kecil","naik kelas","go digital"], "syariah":["syariah","halal","keuangan syariah","ekonomi syariah"], "penukaran uang":["penukaran","tukar uang","uang rusak","kupva","rupiah"], "kurs":["kurs","nilai tukar","dollar","valas"], "pariwisata":["pariwisata","wisata","tourism"], "program BI":["meuseuraya","tp2dd","etpd","cbpr","cinta bangga paham rupiah"], "sistem pembayaran":["sistem pembayaran","payment","transfer","kliring","digitalisasi"] };
+/* Kata kunci isu negatif (permintaan pengguna, 74 frasa, 7 kelompok) — juga dipakai sebagai frasa negatif di leksikon */
+const ISSUE_GROUPS = [
+  { id: "layanan", label: "Layanan & citra BI Aceh", kw: ["kecewa BI Aceh","kecewa Bank Indonesia","keluhan BI Aceh","komplain BI Aceh","kritik BI Aceh","protes BI Aceh","BI Aceh buruk","BI Aceh mengecewakan","pelayanan BI Aceh buruk","layanan BI Aceh lambat","respon BI Aceh lambat","BI Aceh tidak membantu"] },
+  { id: "qris", label: "Gangguan QRIS", kw: ["QRIS error","QRIS bermasalah","QRIS gagal","QRIS tidak bisa","QRIS tidak berfungsi","QRIS lambat","QRIS down","transaksi QRIS gagal","pembayaran QRIS gagal","saldo QRIS","uang QRIS tidak masuk","refund QRIS"] },
+  { id: "qrisbiaya", label: "Biaya & kerugian QRIS", kw: ["QRIS merugikan","biaya QRIS mahal","potongan QRIS","merchant QRIS kecewa"] },
+  { id: "tukar", label: "Penukaran & peredaran uang", kw: ["susah tukar uang","sulit tukar uang","tidak dapat uang baru","kehabisan uang","penukaran uang gagal","antrian penukaran uang","antrian BI panjang","layanan penukaran uang buruk","kas keliling penuh","tidak kebagian uang","uang rusak","uang palsu","penukaran uang bermasalah","BI tidak menyediakan uang"] },
+  { id: "inflasi", label: "Inflasi & harga", kw: ["inflasi Aceh tinggi","harga naik Aceh","harga pangan naik","harga sembako naik","harga beras naik","harga cabai naik","harga bawang naik","harga kebutuhan pokok mahal","daya beli turun","BI gagal mengendalikan inflasi","inflasi tidak terkendali","harga semakin mahal"] },
+  { id: "kebijakan", label: "Suku bunga & kebijakan", kw: ["BI Rate naik","suku bunga naik","bunga kredit naik","bunga pinjaman tinggi","kredit mahal","cicilan naik","kebijakan BI merugikan","kebijakan BI tidak efektif","kebijakan BI gagal","kebijakan Bank Indonesia mengecewakan"] },
+  { id: "umkm", label: "UMKM & pembiayaan", kw: ["UMKM kesulitan","UMKM sulit dapat kredit","UMKM sulit pembiayaan","kredit UMKM sulit","bantuan UMKM tidak cair","UMKM kecewa","UMKM tidak terbantu","pembiayaan UMKM bermasalah","akses kredit sulit","bunga kredit UMKM tinggi"] },
+];
+const ISSUE_KW = ISSUE_GROUPS.flatMap((g) => g.kw.map((k) => ({ k, nk: k.toLowerCase().replace(/[^\p{L}\p{N}\s\-]/gu, " ").replace(/\s+/g, " ").trim(), g: g.id })));
+ISSUE_KW.forEach(({ nk }) => { if (!(nk in NEG)) NEG[nk] = -4; });
+// cocok bila semua kata dalam frasa muncul di teks (urutan bebas), mis. "harga beras dan cabai naik" → "harga beras naik"
+ISSUE_KW.forEach((x) => (x.toks = x.nk.split(" ")));
+function issueHits(text) { const set = new Set(normalize(text).split(" ")); return ISSUE_KW.filter(({ toks }) => toks.every((t) => set.has(t))); }
+const gnewsUrl = (q) => "https://news.google.com/search?q=" + encodeURIComponent(q) + "&hl=id&gl=ID&ceid=ID%3Aid";
+
+/* Snapshot berita nyata (dikumpulkan 8 Okt 2026 dari situs berita; approx = tanggal perkiraan bulan rilis) */
+const NEWS = [
+  ["2026-10-07","Antara Aceh","APPSI Aceh dituntut bantu pedagang jadi penyuplai barang untuk program MBG","https://aceh.antaranews.com/berita/411808/appsi-aceh-dituntut-bantu-pedagang-jadi-penyuplai-barang-untuk-program-mbg"],
+  ["2026-10-07","Antara Aceh","Bank Aceh catat pertumbuhan kinerja positif hingga kuartal III 2026","https://aceh.antaranews.com/berita/411805/bank-aceh-catat-pertumbuhan-kinerja-positif-hingga-kuartal-iii-2026"],
+  ["2026-10-06","Antara Aceh","Bank Indonesia komit bantu kelompok tani Aceh garap lahan bekas bencana","https://aceh.antaranews.com/berita/411760/bank-indonesia-komit-bantu-kelompok-tani-aceh-garap-lahan-bekas-bencana"],
+  ["2026-10-01","Antara Aceh","Pemko: tingkat inflasi September di Banda Aceh cukup terkendali","https://aceh.antaranews.com/berita/411612/pemko-tingkat-inflasi-september-di-banda-aceh-cukup-terkendali"],
+  ["2026-10-01","Republika","Inflasi Banda Aceh September 2026 terkendali di 0,25 persen","https://ekonomi.republika.co.id/berita/tm87es423/inflasi-banda-aceh-september-2026-terkendali-di-025-persen"],
+  ["2026-10-01","Republika","Inflasi tahunan pada September 2026 capai 3,28 persen","https://ekonomi.republika.co.id/berita/tm7r2u370/inflasi-tahunan-pada-september-2026-capai-328-persen"],
+  ["2026-10-01","Antara Aceh","Pemerintah Aceh tetapkan sentra produksi wujudkan ketahanan pangan","https://aceh.antaranews.com/berita/411584/pemerintah-aceh-tetapkan-sentra-produksi-wujudkan-ketahanan-pangan"],
+  ["2026-09-25","Antara Aceh","Produksi roti UMKM di Banda Aceh meningkat berkat program MBG","https://aceh.antaranews.com/berita/411379/produksi-roti-umkm-di-banda-aceh-meningkat-berkat-program-mbg"],
+  ["2026-09-24","Antara Aceh","Aceh Timur usulkan 21.151 pelaku UMKM terdampak banjir terima bantuan","https://aceh.antaranews.com/berita/411352/aceh-timur-usulkan-21151-pelaku-umkm-terdampak-banjir-terima-bantuan"],
+  ["2026-09-24","Antara Aceh","Pemerintah Aceh dorong sistem closed house genjot ayam pedaging","https://aceh.antaranews.com/berita/411372/pemerintah-aceh-dorong-sistem-closed-house-genjot-ayam-pedaging"],
+  ["2026-09-23","Antara Aceh","Pemerintah Aceh gelar 34 kali GPM stabilisasi harga kebutuhan","https://aceh.antaranews.com/berita/411297/pemerintah-aceh-gelar-34-kali-gpm-stabilisasi-harga-kebutuhan"],
+  ["2026-09-23","Antara Aceh","Pemko Banda Aceh sediakan 2.000 paket pangan murah bersubsidi","https://aceh.antaranews.com/berita/411272/pemko-banda-aceh-sediakan-2000-paket-pangan-murah-bersubsidi"],
+  ["2026-09-22","Antara Aceh","Kodam IM gelar pasar murah serentak di seluruh Aceh","https://aceh.antaranews.com/berita/411244/kodam-im-gelar-pasar-murah-serentak-di-seluruh-aceh"],
+  ["2026-09-21","Antara Aceh","Subsidi ongkos angkut turunkan harga cabai merah di Aceh","https://aceh.antaranews.com/berita/411201/subsidi-ongkos-angkut-turunkan-harga-cabai-merah-di-aceh"],
+  ["2026-09-16","Antara Aceh","Lima komoditas ini berpotensi picu inflasi di Aceh","https://aceh.antaranews.com/berita/410959/lima-komoditas-ini-berpotensi-picu-inflasi-di-aceh"],
+  ["2026-09-10","Databoks","Harga pangan hari ini (10/9) di Aceh: cabai rawit naik, cabai merah turun","https://databoks.katadata.co.id/ekonomi-makro/statistik/c156db20f4b8165/harga-pangan-hari-ini-109-di-aceh-cabai-rawit-naik-cabai-merah-turun"],
+  ["2026-09-08","Antara Aceh","Jalankan amanah Presiden Prabowo, BSI perluas akses keuangan","https://aceh.antaranews.com/berita/410675/jalankan-amanah-presiden-prabowo-bsi-perluas-akses-keuangan"],
+  ["2026-09-06","Databoks","Bulan Agustus, inflasi sektor informasi, komunikasi dan jasa keuangan di Kota Banda Aceh 0,26%","https://databoks.katadata.co.id/datapublish/2026/09/06/bulan-agustus-inflasi-sektor-informasi-komunikasi-dan-jasa-keuangan-di-kota-banda-aceh-0-26"],
+  ["2026-09-04","Antara Aceh","Bank Indonesia libatkan 500 mahasiswa Aceh untuk pahami keuangan","https://aceh.antaranews.com/berita/410471/bank-indonesia-libatkan-500-mahasiswa-aceh-untuk-pahami-keuangan"],
+  ["2026-09-04","Antara Aceh","Jumlah nasabah BSI Region Aceh tembus 4,3 juta","https://aceh.antaranews.com/berita/410491/jumlah-nasabah-bsi-region-aceh-tembus-43-juta"],
+  ["2026-09-03","Antara Aceh","Kelompok Wanita Tani di Aceh Besar kembangkan janeng jadi produk pangan","https://aceh.antaranews.com/berita/410457/kelompok-wanita-tani-di-aceh-besar-kembangkan-janeng-jadi-produk-pangan"],
+  ["2026-09-02","Antara Aceh","Pemerintah Aceh tekan laju inflasi lewat jaga pasokan dan kawal distribusi","https://aceh.antaranews.com/berita/410384/pemerintah-aceh-tekan-laju-inflasi-lewat-jaga-pasokan-dan-kawal-distribusi"],
+  ["2026-09-02","Databoks","Harga pangan hari ini (02/9) di Aceh: cabai merah naik, bawang turun","https://databoks.katadata.co.id/datapublish/2026/09/02/harga-pangan-hari-ini-029-di-aceh-cabai-merah-naik-bawang-turun"],
+  ["2026-08-31","Antara Aceh","BI ajak masyarakat Aceh cermat belanja selama maulid untuk jaga kestabilan harga","https://aceh.antaranews.com/berita/410236/bi-ajak-masyarakat-aceh-cermat-belanja-selama-maulid-untuk-jaga-kestabilan-harga"],
+  ["2026-08-29","Antara Aceh","Bank Indonesia siapkan GenBI Aceh jadi penguat komunikasi digital bank sentral","https://aceh.antaranews.com/berita/410189/bank-indonesia-siapkan-genbi-aceh-jadi-penguat-komunikasi-digital-bank-sentral"],
+  ["2026-08-28","Antara Aceh","Bank Aceh Syariah raih KEJAR Award OJK 2026, terbaik di wilayah Sumatera","https://aceh.antaranews.com/berita/410175/bank-aceh-syariah-raih-kejar-award-ojk-2026-terbaik-di-wilayah-sumatera"],
+  ["2026-08-27","Antara Aceh","Transaksi UMKM Aceh pada Karya Kreatif Indonesia 2026 capai Rp7,98 miliar","https://aceh.antaranews.com/berita/410121/transaksi-umkm-aceh-pada-karya-kreatif-indonesia-2026-capai-rp798-miliar"],
+  ["2026-08-20","Databoks","Harga pangan hari ini 20 Agustus di Aceh: harga beras dan cabai rawit naik","https://databoks.katadata.co.id/datapublish/2026/08/20/harga-pangan-hari-ini-20-agustus-di-aceh-harga-beras-dan-cabai-rawit-naik"],
+  ["2026-08-19","Antara Aceh","Bank Indonesia: Ekonomi Aceh tumbuh, didorong rehab rekon pascabencana","https://aceh.antaranews.com/berita/409819/bank-indonesia-ekonomi-aceh-tumbuh-didorong-rehab-rekon-pascabencana"],
+  ["2026-08-15","Antara Aceh","Dekatkan layanan syariah, BSI hadirkan 71 lapak di pasar rakyat","https://aceh.antaranews.com/berita/409675/dekatkan-layanan-syariah-bsi-hadirkan-71-lapak-di-pasar-rakyat"],
+  ["2026-08-03","RRI Takengon","Aceh Tengah kembali catat inflasi tertinggi nasional di Juli 2026","https://rri.co.id/takengon/ekonomi/makro/2625462/aceh-tengah-kembali-catat-inflasi-tertinggi-nasional-di-juli-2026",1],
+  ["2026-08-03","RRI Banda Aceh","Angka inflasi Aceh pada Juli 2026 meningkat","https://rri.co.id/banda-aceh/ekonomi/bisnis/2624363/angka-inflasi-aceh-pada-juli-2026-meningkat",1],
+  ["2026-07-10","Antara Aceh","Dari lumpur bencana ke etalase digital, harapan yang kembali mengembang","https://aceh.antaranews.com/berita/408136/dari-lumpur-bencana-ke-etalase-digital-harapan-yang-kembali-mengembang"],
+  ["2026-07-08","Databoks","Harga pangan hari ini (08/7) di Aceh: harga cabai merah dan bawang naik","https://databoks.katadata.co.id/datapublish/2026/07/08/harga-pangan-hari-ini-087-di-aceh-harga-cabai-merah-dan-bawang-naik"],
+  ["2026-07-06","Antara Aceh","Bank Indonesia: Nominal transaksi QRIS di Aceh capai Rp2,7 triliun selama 2026","https://aceh.antaranews.com/berita/407931/bank-indonesia-nominal-transaksi-qris-di-aceh-capai-rp27-triliun-selama-2026"],
+  ["2026-06-25","Databoks","Harga pangan hari ini (25/6) di Aceh: bawang naik, cabai rawit turun","https://databoks.katadata.co.id/ekonomi-makro/statistik/63f256f62ebda2d/harga-pangan-hari-ini-256-di-aceh-bawang-naik-cabai-rawit-turun"],
+  ["2026-06-18","Kontan","BI Rate naik 25 basis points menjadi 5,75% pada Juni 2026","https://pusatdata.kontan.co.id/infografik/248/BI-Rate-Naik-25-Basis-Points-Menjadi-575-pada-Juni-2026",1],
+  ["2026-02-15","Republika","BI siapkan Rp185,6 triliun untuk kebutuhan Ramadhan dan Idul Fitri 2026","https://ekonomi.republika.co.id/berita/tahij4423/bi-siapkan-rp-1856-triliun-untuk-kebutuhan-ramadhan-dan-idul-fitri-2026"],
+  ["2026-02-11","Bisnis.com","Kriteria UMKM terdampak banjir Aceh-Sumatra yang dapat restrukturisasi kredit","https://ekonomi.bisnis.com/read/20260211/12/1952225/kriteria-umkm-terdampak-banjir-aceh-sumatra-yang-dapat-restrukturisasi-kredit"],
+];
+function makeNews() {
+  return NEWS.map(([d, outlet, title, url, approx], i) => ({ id: 10000 + i, source: "news", outlet, author: outlet, text: title, url, approx: !!approx, real: true, date: new Date(d + "T09:00:00"), keyword: "", ...analyze(title) }));
+}
+const PHRASES = Object.entries({ ...POS, ...NEG }).filter(([k]) => k.includes(" ")).sort((a, b) => b[0].length - a[0].length);
+function normalize(t) { return t.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^\p{L}\p{N}\s\-]/gu, " ").replace(/\s+/g, " ").trim(); }
+function detectTopic(t) { const l = t.toLowerCase(); for (const [k, keys] of Object.entries(TOPICS)) if (keys.some((x) => l.includes(x))) return k; return "umum"; }
+function analyze(text) {
+  let rem = normalize(text), score = 0, hits = 0;
+  for (const [p, w] of PHRASES) if (rem.includes(p)) { score += w; hits++; rem = rem.split(p).join(" "); }
+  const priceCtx = /\b(harga|inflasi|bunga|cicilan|biaya|bi rate|suku bunga)\b/.test(rem);
+  for (const tok of rem.split(" ")) {
+    // konteks ekonomi: "harga naik" / "inflasi meningkat" bernada negatif, bukan positif
+    if (priceCtx && (tok === "naik" || tok === "meningkat" || tok === "tertinggi")) { score -= 3; hits++; continue; }
+    if (tok in POS) { score += POS[tok]; hits++; } else if (tok in NEG) { score += NEG[tok]; hits++; }
+  }
+  let s, c;
+  if (hits === 0 || Math.abs(score) < 0.5) { s = "netral"; c = hits === 0 ? 0.55 : Math.min(0.7, 0.5 + Math.abs(score) * 0.05); }
+  else { s = score > 0 ? "positif" : "negatif"; c = Math.min(0.92, 0.55 + Math.abs(score) * 0.06); }
+  return { sentiment: s, confidence: Math.round(c * 1000) / 1000, topic: detectTopic(text), score, issues: issueHits(text) };
+}
+
+/* ---------- demo generator (port of dummy_data.py) ---------- */
+const KEYWORDS = ["Bank Indonesia Aceh","BI Aceh","BI Banda Aceh","KPwBI Aceh","QRIS Aceh","inflasi Aceh","TPID Aceh","ekonomi Aceh","UMKM Aceh","ekonomi syariah Aceh","halal Aceh","digitalisasi Aceh","Meuseuraya","TP2DD Aceh","ETPD Aceh","CBPR","BI-FAST"];
+const T_POS = ["Program {k} benar-benar membantu UMKM lokal di Aceh. Apresiasi untuk KPwBI Aceh!","Penukaran uang di {k} lancar sekali, petugasnya ramah dan profesional.","QRIS Aceh memudahkan transaksi di pasar tradisional. Inovasi BI Aceh patut diacungi jempol.","Inflasi Aceh terkendali berkat koordinasi {k} dengan Pemda. Kerja bagus!","Ekonomi syariah Aceh semakin maju. Semangat {k}!","Sistem pembayaran di Banda Aceh semakin modern. Terima kasih Bank Indonesia Aceh.","UMKM Aceh naik kelas berkat dukungan digitalisasi. Luar biasa!","Program Meuseuraya memberi dampak positif bagi pelaku usaha lokal.","Keuangan syariah Aceh terbantu akses literasi dari BI. Mantap!","Digitalisasi Aceh berjalan baik, kepercayaan pasar terhadap {k} meningkat."];
+const T_NEG = ["Antrian penukaran uang di Banda Aceh terlalu lama, pelayanan {k} perlu diperbaiki.","Sosialisasi QRIS Aceh masih kurang merata di desa. Banyak pedagang masih bingung.","Inflasi Aceh terasa memberatkan harga kebutuhan pokok. Harap {k} lebih responsif.","Informasi TPID Aceh tidak jelas di situs resmi. Frustrasi mencari update terbaru.","Program {k} terkesan elitis, UMKM kecil belum merasakan manfaatnya.","Kendala teknis sistem pembayaran mengganggu transaksi harian di Aceh.","Ekonomi Aceh masih lesu, stimulus dari BI dinilai belum cukup.","Komplain soal uang rusak ditolak di beberapa titik penukaran. Kecewa dengan layanan.","Banyak pelaku usaha mengeluhkan proses {k} yang ribet dan lambat.","Transparansi data inflasi Aceh kurang, publik kesulitan memahami kebijakan.","Hari ini QRIS error lagi di warung, transaksi QRIS gagal tapi saldo terpotong. Minta refund QRIS lama sekali.","Susah tukar uang di Banda Aceh, kas keliling penuh dan tidak kebagian uang baru.","Harga cabai naik terus, harga kebutuhan pokok mahal. Inflasi Aceh tinggi, daya beli turun.","UMKM sulit dapat kredit, bunga kredit UMKM tinggi. UMKM tidak terbantu.","Pelayanan BI Aceh buruk, respon BI Aceh lambat saat ditanya soal uang rusak.","Merchant QRIS kecewa karena potongan QRIS dan biaya QRIS mahal.","BI Rate naik, cicilan naik, kredit mahal. Kebijakan BI tidak efektif menurut warga."];
+const T_NEU = ["Bank Indonesia Aceh mengumumkan jadwal penukaran uang menjelang Hari Raya.","KPwBI Aceh menggelar sosialisasi {k} di Banda Aceh minggu ini.","Data inflasi Aceh bulan ini akan dirilis sesuai kalender resmi BI.","QRIS Aceh terus diperluas ke merchant baru menurut laporan {k}.","Monitoring TP2DD Aceh dilakukan secara berkala oleh Kantor Perwakilan BI.","UMKM Aceh mengikuti workshop digitalisasi sistem pembayaran.","Laporan ekonomi Aceh dibahas dalam rapat koordinasi {k}.","Program ETPD Aceh masuk agenda literasi keuangan daerah.","Diskusi keuangan syariah Aceh digelar bersama komunitas lokal.","Update CBPR dan Cinta Bangga Paham Rupiah disampaikan ke publik."];
+const HASHTAGS = ["BankIndonesiaAceh","BIAceh","BIBandaAceh","KPwBIAceh","QRISAceh","InflasiAceh","TPIDAceh","EkonomiAceh","UMKMAceh","EkonomiSyariahAceh","HalalAceh","DigitalisasiAceh","Meuseuraya","TP2DDAceh"];
+const AUTHORS = ["warga_bandaaceh","umkm_aceh","media_aceh","pedagang_pasar","mahasiswa_unsyiah","fintech_id","reporter_bisnis","komunitas_qris","investor_aceh","netizen_lhokseumawe","komunitas_halal","pariwisata_aceh"];
+const SOURCES = ["x","instagram","tiktok","news","youtube","threads"];
+const SOURCE_LABEL = { x: "X", instagram: "Instagram", tiktok: "TikTok", news: "Berita", youtube: "YouTube", threads: "Threads", manual: "Manual", upload: "Upload" };
+
+function makeDemo(n = 360) {
+  const r = rng(20261008), pick = (a) => a[Math.floor(r() * a.length)];
+  const now = new Date(); now.setHours(12, 0, 0, 0);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const roll = r();
+    const [tpl, forced] = roll < 0.4 ? [T_POS, "positif"] : roll < 0.65 ? [T_NEG, "negatif"] : [T_NEU, "netral"];
+    const kw = pick(KEYWORDS);
+    let text = pick(tpl).replace("{k}", kw);
+    const source = pick(SOURCES);
+    if (source === "instagram") text += "\n\n" + [0, 1, 2].map(() => "#" + pick(HASHTAGS)).join(" ");
+    const d = new Date(now.getTime() - Math.floor(r() * 90) * 864e5 - Math.floor(r() * 23) * 36e5);
+    const a = analyze(text);
+    if (r() < 0.75) { a.sentiment = forced; a.confidence = Math.round((0.7 + r() * 0.25) * 1000) / 1000; }
+    out.push({ id: i + 1, source, author: pick(AUTHORS), text, date: d, keyword: kw, ...a });
+  }
+  return out.sort((a, b) => b.date - a.date);
+}
+
+/* ---------- state ---------- */
+const DEMO = makeDemo(); let REAL = makeNews();
+let UPLOADED = null, MODE = "news";
+let POSTS = REAL;
+const srcKey = (p) => p.outlet || p.source;
+const srcLabel = (k) => SOURCE_LABEL[k] || k;
+let page = 1; const PAGE_SIZE = 12;
+const F = { q: "", source: "", sent: "", topic: "", from: "", to: "", issue: "" };
+const charts = {};
+
+function filtered() {
+  const q = F.q.toLowerCase();
+  const from = F.from ? new Date(F.from + "T00:00:00") : null, to = F.to ? new Date(F.to + "T23:59:59") : null;
+  return POSTS.filter((p) => (!q || p.text.toLowerCase().includes(q) || (p.author || "").toLowerCase().includes(q)) && (!F.source || srcKey(p) === F.source) && (!F.issue || p.issues.some((h) => h.g === F.issue)) && (!F.sent || p.sentiment === F.sent) && (!F.topic || p.topic === F.topic) && (!from || p.date >= from) && (!to || p.date <= to));
+}
+
+function fillSelectors() {
+  const srcs = [...new Set(POSTS.map(srcKey))].sort();
+  $("fSource").innerHTML = '<option value="">Semua</option>' + srcs.map((s) => `<option value="${esc(s)}">${esc(srcLabel(s))}</option>`).join("");
+  const tps = [...new Set(POSTS.map((p) => p.topic))].sort();
+  $("fTopic").innerHTML = '<option value="">Semua</option>' + tps.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  $("fSource").value = F.source; $("fTopic").value = F.topic;
+}
+
+function renderKpis(list) {
+  const n = list.length, c = { positif: 0, negatif: 0, netral: 0 };
+  list.forEach((p) => c[p.sentiment]++);
+  const nss = n ? Math.round(((c.positif - c.negatif) / n) * 100) : 0;
+  const authors = new Set(list.map((p) => p.author)).size;
+  $("kpis").innerHTML = `
+    <div class="kpi"><span class="k">Total mention</span><span class="v">${nf.format(n)}</span><span class="s">${authors} akun/media · ${new Set(list.map(srcKey)).size} sumber</span>
+      <div class="meter"><i style="width:${pct(c.positif, n)}%;background:var(--pos)"></i><i style="width:${pct(c.netral, n)}%;background:var(--neu)"></i><i style="width:${pct(c.negatif, n)}%;background:var(--neg)"></i></div></div>
+    <div class="kpi pos"><span class="k">Positif</span><span class="v">${pct(c.positif, n)}%</span><span class="s">${nf.format(c.positif)} post</span></div>
+    <div class="kpi neg"><span class="k">Negatif</span><span class="v">${pct(c.negatif, n)}%</span><span class="s">${nf.format(c.negatif)} post</span></div>
+    <div class="kpi neu"><span class="k">Netral</span><span class="v">${pct(c.netral, n)}%</span><span class="s">${nf.format(c.netral)} post</span></div>
+    <div class="kpi"><span class="k">Net sentiment</span><span class="v" style="color:${nss >= 0 ? "var(--pos)" : "var(--neg)"}">${nss > 0 ? "+" : ""}${nss}</span><span class="s">(positif − negatif) / total × 100</span></div>
+    <div class="kpi neg"><span class="k">Kena kata kunci isu</span><span class="v">${nf.format(list.filter((p) => p.issues.length).length)}</span><span class="s">dari 74 frasa pemantauan</span></div>`;
+}
+
+function chartBase() {
+  const muted = css("--muted"), line = css("--line");
+  Chart.defaults.font.family = css("--f-body"); Chart.defaults.color = muted;
+  return { grid: { color: line + "88" }, muted, line };
+}
+
+function weekKey(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return fmtDate(x); }
+
+function renderTrend(list) {
+  const { grid } = chartBase();
+  const by = {};
+  list.forEach((p) => { const k = weekKey(p.date); (by[k] ||= { positif: 0, negatif: 0, netral: 0 })[p.sentiment]++; });
+  const keys = Object.keys(by).sort();
+  const lbl = keys.map((k) => new Date(k).toLocaleDateString("id-ID", { day: "numeric", month: "short" }));
+  const ds = (s, v) => ({ label: s[0].toUpperCase() + s.slice(1), data: keys.map((k) => by[k][s]), borderColor: css(v), backgroundColor: css(v) + "30", fill: true, tension: 0.15, cubicInterpolationMode: "monotone", pointRadius: 2, borderWidth: 2 });
+  charts.trend?.destroy();
+  charts.trend = new Chart($("trendChart"), { type: "line", data: { labels: lbl, datasets: [ds("positif", "--pos"), ds("netral", "--neu"), ds("negatif", "--neg")] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, usePointStyle: true } } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid, ticks: { precision: 0 } } } } });
+}
+
+function renderPlatform(list) {
+  const { grid } = chartBase();
+  const by = {};
+  list.forEach((p) => { (by[srcKey(p)] ||= { positif: 0, negatif: 0, netral: 0 })[p.sentiment]++; });
+  const keys = Object.keys(by).sort((a, b) => Object.values(by[b]).reduce((x, y) => x + y) - Object.values(by[a]).reduce((x, y) => x + y));
+  const ds = (s, v) => ({ label: s[0].toUpperCase() + s.slice(1), data: keys.map((k) => by[k][s]), backgroundColor: css(v), borderRadius: 3, barThickness: 18 });
+  charts.platform?.destroy();
+  charts.platform = new Chart($("platformChart"), { type: "bar", data: { labels: keys.map(srcLabel), datasets: [ds("positif", "--pos"), ds("netral", "--neu"), ds("negatif", "--neg")] },
+    options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10, usePointStyle: true } } }, scales: { x: { stacked: true, grid, ticks: { precision: 0 } }, y: { stacked: true, grid: { display: false } } },
+      onClick: (e, els) => { if (!els.length) return; const s = keys[els[0].index]; F.source = F.source === s ? "" : s; $("fSource").value = F.source; page = 1; renderAll(); } } });
+}
+
+function renderTopics(list) {
+  const by = {};
+  list.forEach((p) => { (by[p.topic] ||= { positif: 0, negatif: 0, netral: 0, n: 0 }); by[p.topic][p.sentiment]++; by[p.topic].n++; });
+  const rows = Object.entries(by).sort((a, b) => b[1].n - a[1].n);
+  const max = rows[0]?.[1].n || 1;
+  $("topics").innerHTML = rows.length ? rows.map(([t, v]) => `
+    <div class="topic ${F.topic === t ? "active" : ""}" data-topic="${esc(t)}" title="${v.positif} positif · ${v.netral} netral · ${v.negatif} negatif">
+      <span>${esc(t)}</span>
+      <div class="bar" style="width:${(v.n / max) * 100}%"><i style="width:${pct(v.positif, v.n)}%;background:var(--pos)"></i><i style="width:${pct(v.netral, v.n)}%;background:var(--neu)"></i><i style="width:${pct(v.negatif, v.n)}%;background:var(--neg)"></i></div>
+      <span class="n">${v.n}</span></div>`).join("") : '<p class="empty">Tidak ada data.</p>';
+  $("topics").querySelectorAll(".topic").forEach((el) => el.onclick = () => { F.topic = F.topic === el.dataset.topic ? "" : el.dataset.topic; $("fTopic").value = F.topic; page = 1; renderAll(); });
+}
+
+const STOP = new Set("yang dan di ke dari ini itu dengan untuk pada adalah atau juga akan ada dalam tidak sudah bisa oleh karena sebagai lebih sangat mereka kami kita anda saya nya lah kah pun the a an of to in is are was bagi atas antara serta namun tetapi jika agar bahwa hal tahun hari bulan saat telah masih dapat para satu dua tiga baik baru bi aceh banda terlalu banyak belum semakin terus harap minggu sesuai menurut berkat secara bersama terasa beberapa titik dinilai patut diacungi soal perlu terkesan".split(" "));
+function renderCloud(list) {
+  const freq = {};
+  list.forEach((p) => { normalize(p.text.replace(/#\S+/g, "")).split(" ").forEach((w) => { if (w.length < 4 || STOP.has(w) || /^\d+$/.test(w)) return; (freq[w] ||= { n: 0, positif: 0, negatif: 0, netral: 0 }); freq[w].n++; freq[w][p.sentiment]++; }); });
+  const top = Object.entries(freq).sort((a, b) => b[1].n - a[1].n).slice(0, 45);
+  if (!top.length) { $("cloud").innerHTML = '<p class="empty">Tidak ada data.</p>'; return; }
+  const max = top[0][1].n, min = top[top.length - 1][1].n;
+  const shuffled = top.map((x, i) => [x, (i * 7919) % 45]).sort((a, b) => a[1] - b[1]).map((x) => x[0]);
+  $("cloud").innerHTML = shuffled.map(([w, v]) => {
+    const dom = v.positif >= v.negatif && v.positif >= v.netral ? "--pos" : v.negatif >= v.netral ? "--neg" : "--neu";
+    const size = 12 + ((v.n - min) / Math.max(1, max - min)) * 22;
+    return `<span style="font-size:${size.toFixed(1)}px;color:var(${dom})" title="${esc(w)}: ${v.n} kali">${esc(w)}</span>`;
+  }).join("");
+}
+
+function renderPosts(list) {
+  const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  page = Math.min(page, pages);
+  const rows = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  $("postCount").textContent = `${nf.format(list.length)} post`;
+  $("postBody").innerHTML = rows.length ? rows.map((p) => `
+    <tr class="clickable" data-id="${p.id}"><td class="mono">${fmtDate(p.date)}${LIVE.newIds.has(p.id) ? '<span class="pill baru">baru</span>' : ""}</td><td class="src">${esc(p.real ? "Berita" : srcLabel(p.source))}</td><td>${p.real ? esc(p.outlet) : "@" + esc(p.author || "-")}</td>
+    <td class="txt">${p.url && p.real ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.text)}</a>` : esc(p.text).replace(/\n+/g, " ")}${p.issues.length ? `<div class="hits">${p.issues.map((h) => `<span>${esc(h.k)}</span>`).join("")}</div>` : ""}<div class="detail" hidden>${p.approx ? "Tanggal perkiraan (bulan rilis). " : ""}Skor leksikon ${p.score?.toFixed?.(1) ?? "-"}${p.keyword ? " · keyword: " + esc(p.keyword) : ""}</div></td>
+    <td>${esc(p.topic)}</td><td><span class="pill ${p.sentiment}">${p.sentiment}</span></td><td class="mono">${p.confidence.toFixed(2)}</td></tr>`).join("") : '<tr><td colspan="7" class="empty">Tidak ada post yang cocok dengan filter.</td></tr>';
+  $("postBody").querySelectorAll("tr.clickable").forEach((tr) => tr.onclick = (ev) => { if (ev.target.closest("a")) return; const d = tr.querySelector(".detail"); d.hidden = !d.hidden; });
+  $("pageInfo").textContent = `Halaman ${page} dari ${pages}`;
+  $("prevPg").disabled = page <= 1; $("nextPg").disabled = page >= pages;
+}
+
+/* ---------- SNA ---------- */
+let sna = null;
+function buildSna(list) {
+  const nodes = new Map(), edges = new Map();
+  const node = (id, label, type) => { if (!nodes.has(id)) nodes.set(id, { id, label, type, c: { positif: 0, negatif: 0, netral: 0 }, n: 0, deg: 0 }); const x = nodes.get(id); return x; };
+  const edge = (a, b) => { const k = a < b ? a + "|" + b : b + "|" + a; edges.set(k, (edges.get(k) || 0) + 1); };
+  list.slice(0, 400).forEach((p) => {
+    const t = node("t:" + p.topic, p.topic, "topik"), s = node("s:" + srcKey(p), srcLabel(srcKey(p)), "platform");
+    if (p.real) { [t, s].forEach((x) => { x.c[p.sentiment]++; x.n++; }); edge(s.id, t.id); }
+    else { const a = node("a:" + p.author, "@" + p.author, "akun"); [a, t, s].forEach((x) => { x.c[p.sentiment]++; x.n++; }); edge(a.id, t.id); edge(a.id, s.id); }
+    p.issues.forEach((h) => { const g = ISSUE_GROUPS.find((x) => x.id === h.g); const i = node("i:" + h.g, "⚠ " + g.label, "topik"); i.c.negatif++; i.n++; edge(i.id, s.id); });
+  });
+  const ns = [...nodes.values()], es = [...edges.entries()].map(([k, w]) => { const [a, b] = k.split("|"); nodes.get(a).deg++; nodes.get(b).deg++; return { a, b, w }; });
+  ns.forEach((x) => { x.sent = x.c.positif > x.c.negatif * 1.2 && x.c.positif >= x.c.netral ? "positif" : x.c.negatif > x.c.positif * 1.2 && x.c.negatif >= x.c.netral * 0.8 ? "negatif" : "netral"; });
+  return { ns, es, idx: nodes };
+}
+function renderSna(list) {
+  const cv = $("snaCanvas"), r = rng(7);
+  const g = buildSna(list);
+  const W = cv.clientWidth, H = cv.clientHeight;
+  g.ns.forEach((n) => { n.x = W / 2 + (r() - 0.5) * W * 0.7; n.y = H / 2 + (r() - 0.5) * H * 0.7; n.vx = 0; n.vy = 0; n.rad = n.type === "akun" ? 4 + Math.sqrt(n.n) * 1.2 : 7 + Math.sqrt(n.n) * 1.1; });
+  sna = { ...g, W, H, ticks: 0, drag: null };
+  const n = g.ns.length, e = g.es.length;
+  $("snaStats").innerHTML = `<div><b>${n}</b><small>node</small></div><div><b>${e}</b><small>edge</small></div><div><b>${n > 1 ? ((2 * e) / (n * (n - 1)) * 100).toFixed(1) : 0}%</b><small>densitas</small></div><div><b>${n ? ((2 * e) / n).toFixed(1) : 0}</b><small>rata-rata derajat</small></div>`;
+  $("snaTop").innerHTML = [...g.ns].sort((a, b) => b.n - a.n).slice(0, 8).map((x) => `<li><span><span class="pill ${x.sent}" style="margin-right:6px">${x.type}</span>${esc(x.label)}</span><span>${x.n}</span></li>`).join("");
+  if (!sna.loop) { sna.loop = true; requestAnimationFrame(stepSna); }
+}
+function stepSna() {
+  const s = sna; if (!s) return;
+  const cv = $("snaCanvas"), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  if (s.ticks < 320 || s.drag) {
+    const alpha = s.drag ? 0.3 : Math.max(0.02, 1 - s.ticks / 320);
+    const ns = s.ns;
+    for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) {
+      const a = ns[i], b = ns[j]; let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy + 0.01; const f = (5200 / d2) * alpha; const d = Math.sqrt(d2);
+      dx /= d; dy /= d; a.vx -= dx * f; a.vy -= dy * f; b.vx += dx * f; b.vy += dy * f;
+    }
+    for (const e of s.es) { const a = s.idx.get(e.a), b = s.idx.get(e.b); const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1; const f = (d - 120) * 0.01 * alpha; a.vx += (dx / d) * f; a.vy += (dy / d) * f; b.vx -= (dx / d) * f; b.vy -= (dy / d) * f; }
+    for (const n of ns) { n.vx += (W / 2 - n.x) * 0.002 * alpha; n.vy += (H / 2 - n.y) * 0.004 * alpha; if (n === s.drag) { n.vx = n.vy = 0; continue; } n.x += n.vx; n.y += n.vy; n.vx *= 0.6; n.vy *= 0.6; n.x = Math.max(n.rad + 4, Math.min(W - n.rad - 4, n.x)); n.y = Math.max(n.rad + 4, Math.min(H - n.rad - 4, n.y)); }
+    s.ticks++;
+  }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const col = { positif: css("--pos"), negatif: css("--neg"), netral: css("--neu") }, line = css("--line"), fg = css("--fg"), bg = css("--bg");
+  ctx.strokeStyle = line; for (const e of s.es) { const a = s.idx.get(e.a), b = s.idx.get(e.b); ctx.globalAlpha = 0.55; ctx.lineWidth = Math.min(3, 0.5 + e.w * 0.25); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  for (const n of s.ns) {
+    ctx.fillStyle = col[n.sent]; ctx.strokeStyle = bg; ctx.lineWidth = 1.5; ctx.beginPath();
+    if (n.type === "akun") ctx.arc(n.x, n.y, n.rad, 0, Math.PI * 2);
+    else if (n.type === "topik") { ctx.moveTo(n.x, n.y - n.rad); ctx.lineTo(n.x + n.rad, n.y); ctx.lineTo(n.x, n.y + n.rad); ctx.lineTo(n.x - n.rad, n.y); ctx.closePath(); }
+    else ctx.rect(n.x - n.rad * 0.8, n.y - n.rad * 0.8, n.rad * 1.6, n.rad * 1.6);
+    ctx.fill(); ctx.stroke();
+    if (n.type !== "akun" || n === s.hover) { ctx.fillStyle = fg; ctx.font = `${n.type === "akun" ? 500 : 700} 11px ${css("--f-body")}`; ctx.textAlign = "center"; ctx.fillText(n.label, n.x, n.y - n.rad - 4); }
+  }
+  requestAnimationFrame(stepSna);
+}
+(function snaEvents() {
+  const cv = $("snaCanvas");
+  const at = (ev) => { const r = cv.getBoundingClientRect(); const x = ev.clientX - r.left, y = ev.clientY - r.top; return { x, y, n: sna?.ns.find((n) => (n.x - x) ** 2 + (n.y - y) ** 2 < (n.rad + 4) ** 2) }; };
+  cv.addEventListener("pointerdown", (ev) => { const h = at(ev); if (h.n) { sna.drag = h.n; cv.setPointerCapture(ev.pointerId); } });
+  cv.addEventListener("pointermove", (ev) => { const h = at(ev); if (sna) { sna.hover = h.n; cv.style.cursor = h.n ? "grab" : "default"; if (sna.drag) { sna.drag.x = h.x; sna.drag.y = h.y; } } });
+  cv.addEventListener("pointerup", () => { if (sna) { sna.drag = null; sna.ticks = Math.max(sna.ticks, 260); } });
+})();
+
+function renderIssues(list) {
+  const cnt = {}, kwCnt = {};
+  list.forEach((p) => { const gs = new Set(); p.issues.forEach((h) => { gs.add(h.g); kwCnt[h.k] = (kwCnt[h.k] || 0) + 1; }); gs.forEach((g) => (cnt[g] = (cnt[g] || 0) + 1)); });
+  $("issues").innerHTML = ISSUE_GROUPS.map((g) => {
+    const n = cnt[g.id] || 0;
+    const orQ = g.kw.slice(0, 6).map((k) => `"${k}"`).join(" OR ");
+    return `<div class="issue ${n ? "hot" : ""} ${F.issue === g.id ? "active" : ""}" data-issue="${g.id}" tabindex="0">
+      <div class="issue-top"><b>${esc(g.label)}</b><span class="num ${n ? "" : "zero"}">${n}</span></div>
+      <a class="gn" href="${gnewsUrl(orQ)}" target="_blank" rel="noopener">Cari di Google News ↗</a>
+      <details><summary>${g.kw.length} kata kunci${n ? " · " + g.kw.filter((k) => kwCnt[k]).length + " muncul" : ""}</summary>
+        <div class="chips">${g.kw.map((k) => `<a class="${kwCnt[k] ? "hit" : ""}" href="${gnewsUrl('"' + k + '"')}" target="_blank" rel="noopener" title="${kwCnt[k] ? kwCnt[k] + " post" : "belum muncul"}">${esc(k)}${kwCnt[k] ? " · " + kwCnt[k] : ""}</a>`).join("")}</div></details></div>`;
+  }).join("");
+  $("issues").querySelectorAll(".issue").forEach((el) => {
+    const toggle = (ev) => { if (ev.target.closest("a,summary,details")) return; F.issue = F.issue === el.dataset.issue ? "" : el.dataset.issue; page = 1; renderAll(); };
+    el.addEventListener("click", toggle);
+    el.addEventListener("keydown", (ev) => { if (ev.key === "Enter") toggle(ev); });
+  });
+}
+
+function setNotice() {
+  const n = $("dataNoticeText"), box = $("dataNotice");
+  box.style.borderColor = MODE === "demo" ? "" : "var(--accent)";
+  if (MODE === "news") n.innerHTML = `<strong style="color:var(--accent)">Berita nyata · ${REAL.length} artikel.</strong> Judul berita Aceh dari Antara Aceh, Republika, Databoks, RRI, Kontan, Bisnis.com dan Google News. Sentimen dinilai dari judul; klik judul untuk membaca artikel. ${LIVE.last ? `Terakhir disegarkan dari Google News ${LIVE.last.toLocaleTimeString("id-ID")}.` : "Snapshot 8 Okt 2026; tekan Refresh data untuk mengambil berita terbaru."}`;
+  else if (MODE === "demo") n.innerHTML = `<strong>Data demo sintetis.</strong> ${DEMO.length} post medsos dibangkitkan dari template <span class="mono">dummy_data.py</span>, termasuk contoh kata kunci isu negatif. Bukan percakapan nyata.`;
+  else if (MODE === "mix") n.innerHTML = `<strong>Gabungan.</strong> ${REAL.length} berita nyata + ${DEMO.length} post demo sintetis. Angka di bawah mencampur keduanya, gunakan untuk melihat tampilan saja.`;
+  else n.innerHTML = UPLOADED.note;
+}
+function setMode(m) {
+  MODE = m; $("fMode").value = m;
+  POSTS = m === "news" ? REAL : m === "demo" ? DEMO : m === "mix" ? [...REAL, ...DEMO].sort((a, b) => b.date - a.date) : UPLOADED.posts;
+  setNotice(); Object.keys(F).forEach((k) => (F[k] = "")); ["fQ", "fSource", "fSent", "fTopic", "fFrom", "fTo"].forEach((id) => ($(id).value = "")); page = 1; fillSelectors(); renderAll();
+}
+$("fMode").onchange = () => setMode($("fMode").value);
+
+function renderAll() {
+  const list = filtered();
+  renderKpis(list); renderIssues(list); renderTrend(list); renderPlatform(list); renderTopics(list); renderCloud(list); renderPosts(list); renderSna(list);
+}
+
+/* ---------- filters ---------- */
+[["fQ", "q", "input"], ["fSource", "source", "change"], ["fSent", "sent", "change"], ["fTopic", "topic", "change"], ["fFrom", "from", "change"], ["fTo", "to", "change"]].forEach(([id, k, ev]) => $(id).addEventListener(ev, () => { F[k] = $(id).value; page = 1; renderAll(); }));
+$("fReset").onclick = () => { Object.keys(F).forEach((k) => (F[k] = "")); ["fQ", "fSource", "fSent", "fTopic", "fFrom", "fTo"].forEach((id) => $(id).value = ""); page = 1; renderAll(); };
+$("prevPg").onclick = () => { page--; renderPosts(filtered()); };
+$("nextPg").onclick = () => { page++; renderPosts(filtered()); };
+
+/* ---------- upload posts (kolom: text_raw/text, source, author, posted_at, keyword_matched) ---------- */
+function parseDate(v) {
+  if (v instanceof Date && !isNaN(v)) return v;
+  if (typeof v === "number") return new Date(Math.round((v - 25569) * 864e5));
+  const d = new Date(String(v || "").replace(" ", "T")); return isNaN(d) ? new Date() : d;
+}
+$("postFile").addEventListener("change", (ev) => {
+  const file = ev.target.files[0]; if (!file) return;
+  const rd = new FileReader();
+  rd.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array", cellDates: true });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+      const pickCol = (r, names) => { for (const n of names) for (const k of Object.keys(r)) if (k.trim().toLowerCase() === n) return r[k]; return ""; };
+      const posts = rows.map((r, i) => {
+        const text = String(pickCol(r, ["text_raw", "text", "teks", "komentar", "caption", "content"]) || "").trim();
+        if (!text) return null;
+        return { id: i + 1, text, source: String(pickCol(r, ["source", "platform", "sumber"]) || "upload").toLowerCase(), author: String(pickCol(r, ["author", "username", "akun", "user"]) || "anonim").replace(/^@/, ""), date: parseDate(pickCol(r, ["posted_at", "date", "tanggal", "timestamp", "created_at"])), keyword: String(pickCol(r, ["keyword_matched", "keyword"]) || ""), ...analyze(text) };
+      }).filter(Boolean);
+      if (!posts.length) { $("dataNoticeText").innerHTML = `<strong>File tidak terbaca.</strong> Tidak ditemukan kolom teks. Pastikan ada kolom <span class="mono">text_raw</span> atau <span class="mono">text</span>.`; return; }
+      UPLOADED = { posts: posts.sort((a, b) => b.date - a.date), note: `<strong style="color:var(--accent)">Data dari ${esc(file.name)}.</strong> ${nf.format(posts.length)} post dianalisis di browser dengan leksikon InSet + 74 kata kunci isu negatif. Data tidak dikirim ke mana pun.` };
+      $("fMode").querySelector('[value="upload"]').disabled = false; setMode("upload");
+    } catch (err) { $("dataNoticeText").innerHTML = `<strong>Gagal membaca file.</strong> ${esc(err.message)}`; }
+    ev.target.value = "";
+  };
+  rd.readAsArrayBuffer(file);
+});
+
+
+/* ================= LIVE REFRESH (Google News via /api/news di Vercel) ================= */
+const API = "/api/news";
+const LIVE = { last: null, ok: null, timer: null, newIds: new Set() };
+const normTitle = (t) => normalize(t).slice(0, 90);
+function log(msg) { const el = $("rmLog"); const t = new Date().toLocaleTimeString("id-ID"); el.textContent = (el.dataset.used ? el.textContent + "\n" : "") + `[${t}] ${msg}`; el.dataset.used = 1; el.scrollTop = el.scrollHeight; }
+function setLiveStatus() {
+  const dot = $("liveDot"), txt = $("liveTxt");
+  dot.className = "live-dot" + (LIVE.ok === true ? " on" : LIVE.ok === false ? " err" : "");
+  const auto = LIVE.timer ? ` · otomatis ${$("rmEvery").value} mnt` : "";
+  txt.textContent = LIVE.last ? `Diperbarui ${LIVE.last.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}${auto}` : LIVE.ok === false ? "Mode snapshot (live tidak tersedia)" : "Snapshot 8 Okt 2026" + auto;
+  $("rmLast").textContent = LIVE.last ? "Terakhir: " + LIVE.last.toLocaleString("id-ID") : "";
+}
+async function refreshNews(silent) {
+  $("rmNow").disabled = true; $("rmNow").textContent = "Mengambil…";
+  try {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 25000);
+    const res = await fetch(API + "?t=" + Date.now(), { signal: ctl.signal, headers: { accept: "application/json" } });
+    clearTimeout(to);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data.items)) throw new Error("format tidak dikenal");
+    const seen = new Set(REAL.map((p) => normTitle(p.text)));
+    let added = 0;
+    const fresh = [];
+    data.items.forEach((it, i) => {
+      const k = normTitle(it.title); if (!k || seen.has(k)) return; seen.add(k);
+      const d = new Date(it.pubDate); const id = 20000 + REAL.length + fresh.length;
+      fresh.push({ id, source: "news", outlet: it.source || "Google News", author: it.source || "Google News", text: it.title, url: it.link, real: true, live: true, date: isNaN(d) ? new Date() : d, keyword: it.query || "", ...analyze(it.title) });
+      LIVE.newIds.add(id); added++;
+    });
+    REAL = [...fresh, ...REAL].sort((a, b) => b.date - a.date);
+    LIVE.ok = true; LIVE.last = new Date();
+    log(`OK · ${data.items.length} item dari ${data.queries || "?"} kueri · ${added} berita baru`);
+    if (MODE === "news" || MODE === "mix") { const keep = { ...F }; setMode(MODE); Object.assign(F, keep); restoreFilterInputs(); renderAll(); }
+    if (added && (silent || $("refreshModal").hidden)) showToast(`${added} berita baru masuk`);
+  } catch (err) {
+    LIVE.ok = false;
+    log(`Gagal: ${err.name === "AbortError" ? "waktu habis" : err.message}. Refresh real-time hanya aktif bila dashboard dibuka dari domain Vercel (ada /api/news). Data snapshot tetap dipakai.`);
+    if (LIVE.timer && LIVE.failCount++ > 2) toggleAuto(false);
+  } finally {
+    $("rmNow").disabled = false; $("rmNow").textContent = "Ambil berita terbaru sekarang"; setLiveStatus();
+  }
+}
+function restoreFilterInputs() { $("fQ").value = F.q; $("fSource").value = F.source; $("fSent").value = F.sent; $("fTopic").value = F.topic; $("fFrom").value = F.from; $("fTo").value = F.to; }
+function toggleAuto(on) {
+  clearInterval(LIVE.timer); LIVE.timer = null; LIVE.failCount = 0; $("rmAuto").checked = on;
+  if (on) { LIVE.timer = setInterval(() => { if (!document.hidden) refreshNews(true); }, +$("rmEvery").value * 60000); }
+  try { localStorage.setItem("autoRefresh", JSON.stringify({ on, every: $("rmEvery").value })); } catch (e) {}
+  setLiveStatus();
+}
+function showToast(msg) { $("toastTxt").textContent = msg; $("toast").hidden = false; clearTimeout(showToast.t); showToast.t = setTimeout(() => ($("toast").hidden = true), 12000); }
+function openModal() {
+  $("rmMode").textContent = location.hostname.endsWith("vercel.app") || location.hostname === "localhost" ? "Terhubung ke server Vercel: data diambil langsung dari Google News." : "Halaman ini dibuka di luar Vercel. Tombol refresh akan mencoba /api/news; bila gagal, data snapshot tetap dipakai.";
+  $("refreshModal").hidden = false; $("rmNow").focus();
+}
+$("openRefresh").onclick = openModal;
+$("rmClose").onclick = () => ($("refreshModal").hidden = true);
+$("refreshModal").addEventListener("click", (e) => { if (e.target.id === "refreshModal") $("refreshModal").hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("refreshModal").hidden = true; });
+$("rmNow").onclick = () => refreshNews(false);
+$("rmAuto").onchange = () => { toggleAuto($("rmAuto").checked); if ($("rmAuto").checked) refreshNews(true); };
+$("rmEvery").onchange = () => { if (LIVE.timer) toggleAuto(true); else try { localStorage.setItem("autoRefresh", JSON.stringify({ on: false, every: $("rmEvery").value })); } catch (e) {} };
+$("toastX").onclick = () => ($("toast").hidden = true);
+$("toastShow").onclick = () => { $("toast").hidden = true; if (MODE !== "news" && MODE !== "mix") setMode("news"); document.querySelector("#postBody").closest(".panel").scrollIntoView({ behavior: "smooth" }); };
+
+/* ---------- theme & boot ---------- */
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => renderAll());
+new MutationObserver(() => renderAll()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+setNotice(); fillSelectors(); renderAll(); setLiveStatus();
+(function bootLive() {
+  let pref = null; try { pref = JSON.parse(localStorage.getItem("autoRefresh") || "null"); } catch (e) {}
+  if (pref?.every) $("rmEvery").value = pref.every;
+  const onVercel = location.hostname.endsWith("vercel.app") || /^(localhost|127\.)/.test(location.hostname) || document.querySelector('meta[name="live-api"]');
+  if (onVercel) { refreshNews(true); toggleAuto(pref ? !!pref.on : true); }
+  else if (pref?.on) toggleAuto(true);
+})();
+</script>
+
+</body>
+</html>
