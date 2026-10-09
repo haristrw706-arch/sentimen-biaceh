@@ -74,7 +74,7 @@ async function anthropicSpeakers(lines, title, key) {
 }
 async function aiSpeakers(lines, title) {
   if (process.env.GEMINI_API_KEY) return geminiSpeakers(lines, title, process.env.GEMINI_API_KEY);
-  if (process.env.ANTHROPIC_API_KEY) return anthropicSpeakers(lines, title, process.env.ANTHROPIC_API_KEY);
+  if (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1") return anthropicSpeakers(lines, title, process.env.ANTHROPIC_API_KEY);
   return null;
 }
 
@@ -94,7 +94,7 @@ module.exports = async (req, res) => {
     }
     const lines = htmlToLines(html);
     let speakers = [], method = "aturan", aiErr = "";
-    const aiOn = !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY);
+    const aiOn = !!(process.env.GEMINI_API_KEY || (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1"));
     if (aiOn && lines.length) { try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { aiErr = String(e.message || e); } }
     if (!speakers.length) speakers = extractSpeakersFromBody(lines);
     res.setHeader("Cache-Control", aiErr ? "s-maxage=600" : "s-maxage=604800, stale-while-revalidate=86400");
