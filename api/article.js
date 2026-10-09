@@ -45,7 +45,7 @@ function parseAi(text) {
 }
 async function httpErr(r, tag) { let m = ""; try { m = (await r.json())?.error?.message || ""; } catch (e) {} return new Error((`${tag} HTTP ${r.status} ${m}`).slice(0, 200)); }
 const geminiKey = () => String(process.env.GEMINI_API_KEY || "").replace(/^\s*(GEMINI_API_KEY\s*=\s*)?["'`]?|["'`]?\s*$/g, "");
-const MODELS = () => (process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"]);
+const MODELS = () => (process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.0-flash", "gemini-2.0-flash-lite"]);
 async function gemini(body, key, ms) {
   let last;
   for (const model of MODELS()) {
@@ -54,6 +54,7 @@ async function gemini(body, key, ms) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST", signal: withTimeout(ms), headers: { "x-goog-api-key": key, "content-type": "application/json" }, body: JSON.stringify(b),
     });
+    if (r.status === 429 || r.status === 503) { last = await httpErr(r, "Gemini"); continue; } // kuota model ini habis -> coba model gratis lain
     if (r.status === 404 || r.status === 400) { last = await httpErr(r, "Gemini"); if (/API key/i.test(last.message)) throw new Error(last.message + ` [panjang key ${key.length}, awalan ${key.slice(0, 4) === "AIza" ? "AIza OK" : "bukan AIza"}]`); continue; }
     if (!r.ok) throw await httpErr(r, "Gemini");
     return r.json();
