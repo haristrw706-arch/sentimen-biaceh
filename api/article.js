@@ -111,7 +111,7 @@ module.exports = async (req, res) => {
         return res.status(200).json({ status: "ok", method: "AI", via: "url-context", aiOn: true, url, speakers: sp, lead: "" });
       } catch (e) { aiErr = String(e.message || e); }
     }
-    res.setHeader("Cache-Control", "s-maxage=1800");
+    res.setHeader("Cache-Control", /429/.test(aiErr) ? "no-store" : "s-maxage=1800");
     return res.status(200).json({ status: "blocked", url, speakers: [], ...(geminiKey() ? { aiErr } : {}) });
   };
   try {
@@ -130,7 +130,7 @@ module.exports = async (req, res) => {
     const aiOn = !!(geminiKey() || (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1"));
     if (aiOn) { try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { aiErr = String(e.message || e); } }
     if (!speakers.length) speakers = extractSpeakersFromBody(lines);
-    res.setHeader("Cache-Control", aiErr ? "s-maxage=600" : LONG);
+    res.setHeader("Cache-Control", aiErr ? (/429/.test(aiErr) ? "no-store" : "s-maxage=600") : LONG);
     return res.status(200).json({ status: "ok", method, aiOn, ...(aiErr ? { aiErr } : {}), url, speakers, lead: (lines[0] || "").slice(0, 280), ...(req.query.debug ? { lines } : {}) });
   } catch (e) {
     return viaUrl(String(e.message || e));
