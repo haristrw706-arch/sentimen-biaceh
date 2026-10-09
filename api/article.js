@@ -43,7 +43,7 @@ async function aiSpeakers(lines, title) {
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5", max_tokens: 400, messages: [{ role: "user", content: prompt }] }),
   });
-  if (!r.ok) throw new Error("AI HTTP " + r.status);
+  if (!r.ok) { let m = ""; try { m = (await r.json())?.error?.message || ""; } catch (e) {} throw new Error(("AI HTTP " + r.status + " " + m).slice(0, 200)); }
   const data = await r.json();
   const out = JSON.parse((data.content?.[0]?.text || "").match(/\{[\s\S]*\}/)[0]);
   return (out.narasumber || []).map((n) => ({ text: n.lembaga && n.nama ? `${n.lembaga} (${n.nama})` : n.lembaga || n.nama, how: "AI" })).filter((x) => x.text).slice(0, 4);
@@ -64,11 +64,12 @@ module.exports = async (req, res) => {
       return res.status(200).json({ status: "blocked", url, speakers: [] });
     }
     const lines = htmlToLines(html);
-    let speakers = [], method = "aturan";
-    try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { /* jatuh ke aturan */ }
+    let speakers = [], method = "aturan", aiErr = "";
+    const aiOn = !!process.env.ANTHROPIC_API_KEY;
+    if (aiOn && lines.length) { try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { aiErr = String(e.message || e); } }
     if (!speakers.length) speakers = extractSpeakersFromBody(lines);
-    res.setHeader("Cache-Control", "s-maxage=604800, stale-while-revalidate=86400");
-    return res.status(200).json({ status: lines.length ? "ok" : "empty", method, url, speakers, lead: (lines[0] || "").slice(0, 280), ...(req.query.debug ? { lines } : {}) });
+    res.setHeader("Cache-Control", aiErr ? "s-maxage=600" : "s-maxage=604800, stale-while-revalidate=86400");
+    return res.status(200).json({ status: lines.length ? "ok" : "empty", method, aiOn, ...(aiErr ? { aiErr } : {}), url, speakers, lead: (lines[0] || "").slice(0, 280), ...(req.query.debug ? { lines } : {}) });
   } catch (e) {
     res.setHeader("Cache-Control", "s-maxage=600");
     return res.status(200).json({ status: "error", url, speakers: [], error: String(e.message || e) });
