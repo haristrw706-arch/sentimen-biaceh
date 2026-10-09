@@ -55,7 +55,7 @@ async function geminiSpeakers(lines, title, key) {
         generationConfig: { temperature: 0, maxOutputTokens: 600, responseMimeType: "application/json", ...(model.includes("2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
       }),
     });
-    if (r.status === 404 || r.status === 400) { last = await httpErr(r, "Gemini"); continue; }
+    if (r.status === 404 || r.status === 400) { last = await httpErr(r, "Gemini"); if (/API key/i.test(last.message)) throw new Error(last.message + ` [panjang key ${key.length}, awalan ${key.slice(0, 4) === "AIza" ? "AIza OK" : "bukan AIza"}]`); continue; }
     if (!r.ok) throw await httpErr(r, "Gemini");
     const data = await r.json();
     return parseAi((data.candidates?.[0]?.content?.parts || []).map((x) => x.text || "").join(""));
@@ -73,7 +73,8 @@ async function anthropicSpeakers(lines, title, key) {
   return parseAi(data.content?.[0]?.text);
 }
 async function aiSpeakers(lines, title) {
-  if (process.env.GEMINI_API_KEY) return geminiSpeakers(lines, title, process.env.GEMINI_API_KEY);
+  const clean = (k) => String(k || "").replace(/^\s*(GEMINI_API_KEY\s*=\s*)?["'`]?|["'`]?\s*$/g, "");
+  if (process.env.GEMINI_API_KEY) return geminiSpeakers(lines, title, clean(process.env.GEMINI_API_KEY));
   if (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1") return anthropicSpeakers(lines, title, process.env.ANTHROPIC_API_KEY);
   return null;
 }
