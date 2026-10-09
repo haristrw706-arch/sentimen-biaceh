@@ -138,6 +138,9 @@ tr.clickable{cursor:pointer} tr.clickable:hover td{background:var(--surface-2)}
 .mono{font-family:var(--f-mono)}
 td.spk{font-weight:600;min-width:120px;max-width:200px}
 .muted{color:var(--muted);font-weight:400}
+.spk-note{font-size:11px;font-weight:400;color:var(--muted);margin-top:2px}
+.spk-more{font-size:11px;font-weight:700;color:var(--accent);cursor:help;margin-left:4px}
+.spk-list{font-weight:400;font-size:12px;color:var(--fg);margin-top:2px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 a{color:var(--accent)} td.txt a{color:var(--fg);text-decoration:none;font-weight:600} td.txt a:hover{color:var(--accent);text-decoration:underline}
 .hits{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
@@ -492,7 +495,7 @@ const charts = {};
 function filtered() {
   const q = F.q.toLowerCase();
   const from = F.from ? new Date(F.from + "T00:00:00") : null, to = F.to ? new Date(F.to + "T23:59:59") : null;
-  return POSTS.filter((p) => (!q || p.text.toLowerCase().includes(q) || (p.author || "").toLowerCase().includes(q) || (p.speaker || "").toLowerCase().includes(q)) && (!F.source || srcKey(p) === F.source) && (!F.issue || p.issues.some((h) => h.g === F.issue)) && (!F.sent || p.sentiment === F.sent) && (!F.topic || p.topic === F.topic) && (!from || p.date >= from) && (!to || p.date <= to));
+  return POSTS.filter((p) => (!q || p.text.toLowerCase().includes(q) || (p.author || "").toLowerCase().includes(q) || speakerText(p).toLowerCase().includes(q)) && (!F.source || srcKey(p) === F.source) && (!F.issue || p.issues.some((h) => h.g === F.issue)) && (!F.sent || p.sentiment === F.sent) && (!F.topic || p.topic === F.topic) && (!from || p.date >= from) && (!to || p.date <= to));
 }
 
 function fillSelectors() {
@@ -582,9 +585,10 @@ function renderPosts(list) {
   const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   page = Math.min(page, pages);
   const rows = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  $("postCount").textContent = `${nf.format(list.length)} post`;
+  $("postCount").textContent = `${nf.format(list.length)} post` + bodyProgress(list);
+  queueBodies(rows, list);
   $("postBody").innerHTML = rows.length ? rows.map((p) => `
-    <tr class="clickable" data-id="${p.id}"><td class="mono">${fmtDate(p.date)}${LIVE.newIds.has(p.id) ? '<span class="pill baru">baru</span>' : ""}</td><td class="src">${esc(p.real ? "Berita" : srcLabel(p.source))}</td><td>${p.real ? esc(p.outlet) : "@" + esc(p.author || "-")}</td><td class="spk">${p.speaker ? esc(p.speaker) : `<span class="muted" title="Judul tidak menyebut siapa yang berbicara">${p.real ? "Tidak disebut" : "@" + esc(p.author || "-")}</span>`}</td>
+    <tr class="clickable" data-id="${p.id}"><td class="mono">${fmtDate(p.date)}${LIVE.newIds.has(p.id) ? '<span class="pill baru">baru</span>' : ""}</td><td class="src">${esc(p.real ? "Berita" : srcLabel(p.source))}</td><td>${p.real ? esc(p.outlet) : "@" + esc(p.author || "-")}</td><td class="spk">${speakerCell(p)}</td>
     <td class="txt">${p.url && p.real ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.text)}</a>` : esc(p.text).replace(/\n+/g, " ")}${p.issues.length ? `<div class="hits">${p.issues.map((h) => `<span>${esc(h.k)}</span>`).join("")}</div>` : ""}<div class="detail" hidden>${p.approx ? "Tanggal perkiraan (bulan rilis). " : ""}Skor ${p.score ?? "-"}${p.reasons && p.reasons.length ? " · alasan: " + esc(p.reasons.join("; ")) : " · tidak ada kata bermuatan sentimen"}${p.keyword ? " · keyword: " + esc(p.keyword) : ""}</div></td>
     <td>${esc(p.topic)}</td><td><span class="pill ${p.sentiment}">${p.sentiment}</span></td><td class="mono">${p.confidence.toFixed(2)}</td></tr>`).join("") : '<tr><td colspan="8" class="empty">Tidak ada post yang cocok dengan filter.</td></tr>';
   $("postBody").querySelectorAll("tr.clickable").forEach((tr) => tr.onclick = (ev) => { if (ev.target.closest("a")) return; const d = tr.querySelector(".detail"); d.hidden = !d.hidden; });
@@ -729,6 +733,59 @@ $("postFile").addEventListener("change", (ev) => {
   rd.readAsArrayBuffer(file);
 });
 
+
+/* ================= NARASUMBER DARI ISI BERITA (via /api/article di Vercel) ================= */
+const HAS_API = location.hostname.endsWith("vercel.app") || /^(localhost|127\.)/.test(location.hostname);
+const BODY = { cache: {}, inflight: new Set(), queue: [], active: 0, t: null };
+try { BODY.cache = JSON.parse(localStorage.getItem("bodySpk2") || "{}"); } catch (e) {}
+function saveBody() { try { const k = Object.keys(BODY.cache); if (k.length > 700) k.slice(0, k.length - 700).forEach((x) => delete BODY.cache[x]); localStorage.setItem("bodySpk2", JSON.stringify(BODY.cache)); } catch (e) {} }
+function speakerText(p) { const b = p.url && BODY.cache[p.url]; return (b && b.sp && b.sp.length ? b.sp.join(" ") + " " : "") + (p.speaker || ""); }
+function speakerCell(p) {
+  if (!p.real) return p.speaker ? esc(p.speaker) : `<span class="muted">@${esc(p.author || "-")}</span>`;
+  const b = p.url && BODY.cache[p.url];
+  if (b && b.sp && b.sp.length) {
+    const rest = b.sp.slice(1);
+    return `${esc(b.sp[0])}${rest.length ? `<span class="spk-more" title="${esc(rest.join("\n"))}">+${rest.length}</span>` : ""}<div class="spk-note">dari isi berita${b.m === "AI" ? " · AI" : ""}</div>`;
+  }
+  let note;
+  if (!HAS_API) note = "dari judul";
+  else if (!b) note = BODY.inflight.has(p.url) ? "membaca isi berita…" : "antre dibaca";
+  else if (b.s === "blocked") note = "situs menolak dibaca otomatis · dari judul";
+  else if (b.s === "ok") note = "isi berita tidak mengutip narasumber";
+  else note = "isi berita gagal dibaca · dari judul";
+  const main = p.speaker ? esc(p.speaker) : `<span class="muted">Tidak disebut</span>`;
+  return `${main}<div class="spk-note">${note}</div>`;
+}
+function bodyProgress(list) {
+  if (!HAS_API) return "";
+  const real = list.filter((p) => p.real && p.url);
+  if (!real.length) return "";
+  const done = real.filter((p) => BODY.cache[p.url]).length;
+  return ` · narasumber dari isi berita: ${done}/${real.length} dibaca`;
+}
+function queueBodies(rows, list) {
+  if (!HAS_API) return;
+  const want = [...rows, ...list].filter((p) => p.real && p.url && !BODY.cache[p.url] && !BODY.inflight.has(p.url));
+  const seen = new Set(); BODY.queue = want.filter((p) => !seen.has(p.url) && seen.add(p.url));
+  pumpBodies();
+}
+function pumpBodies() {
+  while (BODY.active < 4 && BODY.queue.length) {
+    const p = BODY.queue.shift();
+    if (BODY.cache[p.url] || BODY.inflight.has(p.url)) continue;
+    BODY.active++; BODY.inflight.add(p.url);
+    fetch(`/api/article?url=${encodeURIComponent(p.url)}&title=${encodeURIComponent(p.text)}`)
+      .then((r) => r.json())
+      .then((d) => { BODY.cache[p.url] = { s: d.status, sp: (d.speakers || []).map((x) => x.text), m: d.method || "" }; })
+      .catch(() => { BODY.cache[p.url] = { s: "error", sp: [] }; })
+      .finally(() => {
+        BODY.active--; BODY.inflight.delete(p.url); saveBody();
+        clearTimeout(BODY.t); BODY.t = setTimeout(() => renderPostsKeep(), 500);
+        pumpBodies();
+      });
+  }
+}
+function renderPostsKeep() { renderPosts(filtered()); }
 
 /* ================= LIVE REFRESH (Google News via /api/news di Vercel) ================= */
 const API = "/api/news";
