@@ -34,33 +34,48 @@ function htmlToLines(html) {
     .filter((l) => l.length >= 50 && / /.test(l) && !/^(baca juga|simak|lihat juga|editor|pewarta|penulis|copyright|©|dapatkan|ikuti|follow|klik|artikel ini)/i.test(l));
 }
 
-// Narasumber via AI. Prioritas: GEMINI_API_KEY (gratis, Google AI Studio) -> ANTHROPIC_API_KEY (berbayar).
+// Narasumber via AI. Prioritas: GEMINI_API_KEY (gratis, Google AI Studio) -> ANTHROPIC_API_KEY (berbayar, opsional).
+const ASK = `Sebutkan narasumber yang dikutip atau disebut berbicara dalam berita ini (bukan wartawan, bukan media). Untuk tiap narasumber tulis lembaga/usaha/jabatannya dan namanya. Jika tidak ada orang yang dikutip, sebutkan lembaga sumber data/informasi utama berita (mis. "Badan Pangan Nasional"), dengan nama dikosongkan. Balas HANYA JSON: {"narasumber":[{"lembaga":"...","nama":"..."}]} urut dari yang paling utama. Jika benar-benar tidak ada, {"narasumber":[]}.`;
 function aiPrompt(lines, title) {
-  return `Berikut isi berita berbahasa Indonesia berjudul "${title}".\n\n${lines.join("\n").slice(0, 6000)}\n\nSebutkan narasumber yang dikutip atau disebut berbicara dalam berita ini (bukan wartawan, bukan media). Untuk tiap narasumber tulis lembaga/usaha/jabatannya dan namanya. Balas HANYA JSON: {"narasumber":[{"lembaga":"...","nama":"..."}]} urut dari yang paling utama. Jika tidak ada, {"narasumber":[]}.`;
+  return `Berikut isi berita berbahasa Indonesia berjudul "${title}".\n\n${lines.join("\n").slice(0, 6000)}\n\n${ASK}`;
 }
 function parseAi(text) {
   const out = JSON.parse((text || "").match(/\{[\s\S]*\}/)[0]);
   return (out.narasumber || []).map((n) => ({ text: n.lembaga && n.nama ? `${n.lembaga} (${n.nama})` : n.lembaga || n.nama, how: "AI" })).filter((x) => x.text).slice(0, 4);
 }
 async function httpErr(r, tag) { let m = ""; try { m = (await r.json())?.error?.message || ""; } catch (e) {} return new Error((`${tag} HTTP ${r.status} ${m}`).slice(0, 200)); }
-async function geminiSpeakers(lines, title, key) {
-  const models = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"];
+const geminiKey = () => String(process.env.GEMINI_API_KEY || "").replace(/^\s*(GEMINI_API_KEY\s*=\s*)?["'`]?|["'`]?\s*$/g, "");
+const MODELS = () => (process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"]);
+async function gemini(body, key, ms) {
   let last;
-  for (const model of models) {
+  for (const model of MODELS()) {
+    const b = JSON.parse(JSON.stringify(body));
+    if (model.includes("2.5")) b.generationConfig = { ...b.generationConfig, thinkingConfig: { thinkingBudget: 0 } };
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST", signal: withTimeout(15000),
-      headers: { "x-goog-api-key": key, "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: aiPrompt(lines, title) }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 600, responseMimeType: "application/json", ...(model.includes("2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
-      }),
+      method: "POST", signal: withTimeout(ms), headers: { "x-goog-api-key": key, "content-type": "application/json" }, body: JSON.stringify(b),
     });
     if (r.status === 404 || r.status === 400) { last = await httpErr(r, "Gemini"); if (/API key/i.test(last.message)) throw new Error(last.message + ` [panjang key ${key.length}, awalan ${key.slice(0, 4) === "AIza" ? "AIza OK" : "bukan AIza"}]`); continue; }
     if (!r.ok) throw await httpErr(r, "Gemini");
-    const data = await r.json();
-    return parseAi((data.candidates?.[0]?.content?.parts || []).map((x) => x.text || "").join(""));
+    return r.json();
   }
   throw last || new Error("Gemini: model tidak tersedia");
+}
+const textOf = (data) => (data.candidates?.[0]?.content?.parts || []).map((x) => x.text || "").join("");
+async function geminiSpeakers(lines, title, key) {
+  const data = await gemini({ contents: [{ role: "user", parts: [{ text: aiPrompt(lines, title) }] }], generationConfig: { temperature: 0, maxOutputTokens: 600, responseMimeType: "application/json" } }, key, 15000);
+  return parseAi(textOf(data));
+}
+// Situs yang menolak dibaca langsung dari server: minta Gemini membuka halaman lewat alat resmi "URL context" milik Google.
+async function geminiUrlSpeakers(url, title, key) {
+  const data = await gemini({
+    contents: [{ role: "user", parts: [{ text: `Buka dan baca berita berbahasa Indonesia ini: ${url}\nJudul: "${title}".\n\n${ASK}` }] }],
+    tools: [{ url_context: {} }],
+    generationConfig: { temperature: 0, maxOutputTokens: 800 },
+  }, key, 20000);
+  const meta = data.candidates?.[0]?.urlContextMetadata || data.candidates?.[0]?.url_context_metadata;
+  const st = (meta?.urlMetadata || meta?.url_metadata || []).map((m) => m.urlRetrievalStatus || m.url_retrieval_status);
+  if (!st.some((x) => /SUCCESS/.test(x || ""))) throw new Error("Gemini URL context: halaman gagal dibuka (" + (st.join(",") || "tanpa status") + ")");
+  return parseAi(textOf(data));
 }
 async function anthropicSpeakers(lines, title, key) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -73,11 +88,11 @@ async function anthropicSpeakers(lines, title, key) {
   return parseAi(data.content?.[0]?.text);
 }
 async function aiSpeakers(lines, title) {
-  const clean = (k) => String(k || "").replace(/^\s*(GEMINI_API_KEY\s*=\s*)?["'`]?|["'`]?\s*$/g, "");
-  if (process.env.GEMINI_API_KEY) return geminiSpeakers(lines, title, clean(process.env.GEMINI_API_KEY));
+  if (geminiKey()) return geminiSpeakers(lines, title, geminiKey());
   if (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1") return anthropicSpeakers(lines, title, process.env.ANTHROPIC_API_KEY);
   return null;
 }
+const LONG = "s-maxage=604800, stale-while-revalidate=86400";
 
 module.exports = async (req, res) => {
   const link = String(req.query.url || "");
@@ -85,24 +100,39 @@ module.exports = async (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   if (!/^https?:\/\//.test(link)) return res.status(400).json({ status: "error", error: "url wajib diisi" });
   let url = link;
+  // fallback untuk situs yang menolak dibaca: baca lewat Gemini URL context
+  const viaUrl = async (why) => {
+    let aiErr = why;
+    if (geminiKey() && url !== link) {
+      try {
+        const sp = await geminiUrlSpeakers(url, title, geminiKey());
+        res.setHeader("Cache-Control", LONG);
+        return res.status(200).json({ status: "ok", method: "AI", via: "url-context", aiOn: true, url, speakers: sp, lead: "" });
+      } catch (e) { aiErr = String(e.message || e); }
+    }
+    res.setHeader("Cache-Control", "s-maxage=1800");
+    return res.status(200).json({ status: "blocked", url, speakers: [], ...(geminiKey() ? { aiErr } : {}) });
+  };
   try {
     url = await resolveGoogleNews(link);
-    const r = await fetch(url, { headers: { "user-agent": UA, "accept-language": "id-ID,id;q=0.9" }, redirect: "follow", signal: withTimeout(8000) });
-    const html = await r.text();
-    if (r.status === 403 || r.status === 429 || r.status === 503 || /Just a moment|Attention Required|cf-browser-verification|verifies you are not a bot/i.test(html.slice(0, 5000))) {
-      res.setHeader("Cache-Control", "s-maxage=3600");
-      return res.status(200).json({ status: "blocked", url, speakers: [] });
-    }
-    const lines = htmlToLines(html);
-    let speakers = [], method = "aturan", aiErr = "";
-    const aiOn = !!(process.env.GEMINI_API_KEY || (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1"));
-    if (aiOn && lines.length) { try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { aiErr = String(e.message || e); } }
-    if (!speakers.length) speakers = extractSpeakersFromBody(lines);
-    res.setHeader("Cache-Control", aiErr ? "s-maxage=600" : "s-maxage=604800, stale-while-revalidate=86400");
-    return res.status(200).json({ status: lines.length ? "ok" : "empty", method, aiOn, ...(aiErr ? { aiErr } : {}), url, speakers, lead: (lines[0] || "").slice(0, 280), ...(req.query.debug ? { lines } : {}) });
   } catch (e) {
     res.setHeader("Cache-Control", "s-maxage=600");
     return res.status(200).json({ status: "error", url, speakers: [], error: String(e.message || e) });
+  }
+  try {
+    const r = await fetch(url, { headers: { "user-agent": UA, "accept-language": "id-ID,id;q=0.9" }, redirect: "follow", signal: withTimeout(8000) });
+    const html = await r.text();
+    if (r.status >= 400 || /Just a moment|Attention Required|cf-browser-verification|verifies you are not a bot/i.test(html.slice(0, 5000))) return viaUrl("HTTP " + r.status);
+    const lines = htmlToLines(html);
+    if (!lines.length) return viaUrl("isi kosong");
+    let speakers = [], method = "aturan", aiErr = "";
+    const aiOn = !!(geminiKey() || (process.env.ANTHROPIC_API_KEY && process.env.USE_ANTHROPIC === "1"));
+    if (aiOn) { try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { aiErr = String(e.message || e); } }
+    if (!speakers.length) speakers = extractSpeakersFromBody(lines);
+    res.setHeader("Cache-Control", aiErr ? "s-maxage=600" : LONG);
+    return res.status(200).json({ status: "ok", method, aiOn, ...(aiErr ? { aiErr } : {}), url, speakers, lead: (lines[0] || "").slice(0, 280), ...(req.query.debug ? { lines } : {}) });
+  } catch (e) {
+    return viaUrl(String(e.message || e));
   }
 };
 module.exports.htmlToLines = htmlToLines;
