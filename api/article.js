@@ -34,19 +34,48 @@ function htmlToLines(html) {
     .filter((l) => l.length >= 50 && / /.test(l) && !/^(baca juga|simak|lihat juga|editor|pewarta|penulis|copyright|©|dapatkan|ikuti|follow|klik|artikel ini)/i.test(l));
 }
 
-async function aiSpeakers(lines, title) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return null;
-  const prompt = `Berikut isi berita berbahasa Indonesia berjudul "${title}".\n\n${lines.join("\n").slice(0, 6000)}\n\nSebutkan narasumber yang dikutip atau disebut berbicara dalam berita ini (bukan wartawan, bukan media). Untuk tiap narasumber tulis lembaga/usaha/jabatannya dan namanya. Balas HANYA JSON: {"narasumber":[{"lembaga":"...","nama":"..."}]} urut dari yang paling utama. Jika tidak ada, {"narasumber":[]}.`;
+// Narasumber via AI. Prioritas: GEMINI_API_KEY (gratis, Google AI Studio) -> ANTHROPIC_API_KEY (berbayar).
+function aiPrompt(lines, title) {
+  return `Berikut isi berita berbahasa Indonesia berjudul "${title}".\n\n${lines.join("\n").slice(0, 6000)}\n\nSebutkan narasumber yang dikutip atau disebut berbicara dalam berita ini (bukan wartawan, bukan media). Untuk tiap narasumber tulis lembaga/usaha/jabatannya dan namanya. Balas HANYA JSON: {"narasumber":[{"lembaga":"...","nama":"..."}]} urut dari yang paling utama. Jika tidak ada, {"narasumber":[]}.`;
+}
+function parseAi(text) {
+  const out = JSON.parse((text || "").match(/\{[\s\S]*\}/)[0]);
+  return (out.narasumber || []).map((n) => ({ text: n.lembaga && n.nama ? `${n.lembaga} (${n.nama})` : n.lembaga || n.nama, how: "AI" })).filter((x) => x.text).slice(0, 4);
+}
+async function httpErr(r, tag) { let m = ""; try { m = (await r.json())?.error?.message || ""; } catch (e) {} return new Error((`${tag} HTTP ${r.status} ${m}`).slice(0, 200)); }
+async function geminiSpeakers(lines, title, key) {
+  const models = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"];
+  let last;
+  for (const model of models) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST", signal: withTimeout(15000),
+      headers: { "x-goog-api-key": key, "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: aiPrompt(lines, title) }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 600, responseMimeType: "application/json", ...(model.includes("2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
+      }),
+    });
+    if (r.status === 404 || r.status === 400) { last = await httpErr(r, "Gemini"); continue; }
+    if (!r.ok) throw await httpErr(r, "Gemini");
+    const data = await r.json();
+    return parseAi((data.candidates?.[0]?.content?.parts || []).map((x) => x.text || "").join(""));
+  }
+  throw last || new Error("Gemini: model tidak tersedia");
+}
+async function anthropicSpeakers(lines, title, key) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", signal: withTimeout(12000),
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5", max_tokens: 400, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5", max_tokens: 400, messages: [{ role: "user", content: aiPrompt(lines, title) }] }),
   });
-  if (!r.ok) { let m = ""; try { m = (await r.json())?.error?.message || ""; } catch (e) {} throw new Error(("AI HTTP " + r.status + " " + m).slice(0, 200)); }
+  if (!r.ok) throw await httpErr(r, "Anthropic");
   const data = await r.json();
-  const out = JSON.parse((data.content?.[0]?.text || "").match(/\{[\s\S]*\}/)[0]);
-  return (out.narasumber || []).map((n) => ({ text: n.lembaga && n.nama ? `${n.lembaga} (${n.nama})` : n.lembaga || n.nama, how: "AI" })).filter((x) => x.text).slice(0, 4);
+  return parseAi(data.content?.[0]?.text);
+}
+async function aiSpeakers(lines, title) {
+  if (process.env.GEMINI_API_KEY) return geminiSpeakers(lines, title, process.env.GEMINI_API_KEY);
+  if (process.env.ANTHROPIC_API_KEY) return anthropicSpeakers(lines, title, process.env.ANTHROPIC_API_KEY);
+  return null;
 }
 
 module.exports = async (req, res) => {
@@ -65,7 +94,7 @@ module.exports = async (req, res) => {
     }
     const lines = htmlToLines(html);
     let speakers = [], method = "aturan", aiErr = "";
-    const aiOn = !!process.env.ANTHROPIC_API_KEY;
+    const aiOn = !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY);
     if (aiOn && lines.length) { try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { aiErr = String(e.message || e); } }
     if (!speakers.length) speakers = extractSpeakersFromBody(lines);
     res.setHeader("Cache-Control", aiErr ? "s-maxage=600" : "s-maxage=604800, stale-while-revalidate=86400");
