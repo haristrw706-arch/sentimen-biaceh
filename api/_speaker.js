@@ -30,7 +30,8 @@ function validName(n) {
   return w.length >= 1 && w.length <= 5 && !STOP_NAME.test(w[0]) && !DAYS.test(w[0]) && !/^(Kepala|Ketua|Direktur|Deputi|Gubernur|Bupati|Wali|Pedagang|Petani|Warga)$/.test(w[0]);
 }
 function fmt(org, name) {
-  org = (org || "").replace(/[,\s]+$/, "").trim();
+  org = (org || "").replace(/[,\s]+$/, "").replace(/(?:\s+(?:saat ini|adalah|yakni|yaitu|ialah))+$/i, "").replace(/\s+(?:saat|ketika|usai|seusai|dalam|pada)\s.*$/i, "").trim();
+  if (DAYS.test(org.split(/\s+/)[0] || "") || /^(dalam|saat|ketika|di|pada|usai|seusai|kepada)\b/i.test(org) || /^\(?\d/.test(org)) org = "";
   name = (name || "").replace(/[,\s]+$/, "").trim();
   if (org && name) return `${org} (${name})`;
   return org || name;
@@ -61,8 +62,18 @@ function extractSpeakersFromBody(paragraphs) {
     m = s.match(/^Menurut\s+([^,]{3,80}),/);
     if (m) { push(m[1], "menurut"); continue; }
     // P4: "<Jabatan Lembaga> <Nama> mengatakan" (tanpa koma)
-    m = s.match(new RegExp(`^((?:Kepala|Ketua|Direktur|Deputi|Gubernur|Wakil|Bupati|Wali Kota|Sekda|Kadis|Asisten|Kabid|Kasi|Plt|Pj|Camat|Keuchik|Pedagang|Petani|Warga|Pengamat|Ekonom|Dosen)[^,.“"]{3,110}?)(?:\\s+(?:di|saat|ketika|dalam)\\s+[^,]{2,60})?(?:,\\s*[^,]{2,30},)?\\s+(?:${SAY_VERB})\\b`));
-    if (m) { const [org, nm] = splitTrailingName(m[1]); push(fmt(org, nm), "jabatan nama mengatakan"); continue; }
+    m = s.match(new RegExp(`^((?:Kepala|Ketua|Direktur|Deputi|Gubernur|Wakil|Bupati|Wali Kota|Sekda|Kadis|Asisten|Kabid|Kasi|Plt|Pj|Camat|Keuchik|Pedagang|Petani|Warga|Pengamat|Ekonom|Dosen)[^,.“"]{3,110}?)(?:\\s+(?:di|dalam)\\s+[^,]{2,60})?(?:,\\s*[^,]{2,30},)?,?\\s+(?:${SAY_VERB})\\b`));
+    if (m) { const [org, nm] = splitTrailingName(m[1].replace(/\\s+(?:saat ini|adalah|yakni|yaitu|ialah)(?=\\s|$)/g, " ")); push(fmt(org, nm), "jabatan nama mengatakan"); continue; }
+    // P5: "... disampaikan (langsung) oleh <lembaga/pejabat>"
+    m = s.match(/\b(?:disampaikan|dipaparkan|dijelaskan|diungkapkan)\s+(?:langsung\s+)?oleh\s+([^,.;]{5,90})/);
+    if (m) { const ph = m[1].split(/\s(?:yang|untuk|dengan|kepada|di hadapan|terkait|mengenai|tentang)\s/)[0].replace(/^(?:[a-z]+\s+)+(?=[A-Z])/, ""); const [org, nm] = splitTrailingName(ph); push(fmt(org, nm), "disampaikan oleh"); continue; }
+  }
+  // lengkapi nama tanpa jabatan dengan jabatan yang disebut di bagian lain berita
+  for (const f of found) {
+    if (/\(/.test(f.text) || f.text.split(" ").length > 4) continue;
+    const re = new RegExp(`((?:Kepala|Ketua|Direktur|Deputi|Gubernur|Wakil|Bupati|Wali Kota|Sekda|Kadis|Asisten|Kabid|Kasi|Plt|Pj|Camat|Keuchik|Pedagang|Pemilik|Petani|Warga|Pengamat|Ekonom|Dosen|Manajer|General Manager|Pimpinan|Pemimpin)[^,.“”"]{3,90}?)(?:\\s+(?:saat ini|adalah|yakni|yaitu))?,?\\s+${f.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+    const mm = text.match(re);
+    if (mm) f.text = fmt(mm[1], f.text);
   }
   // rapikan: gabungkan entri yang menyebut nama yang sama
   const named = found.map((f) => (f.text.match(/\(([^)]+)\)$/) || [])[1]).filter(Boolean);
@@ -74,6 +85,7 @@ function extractSpeakersFromBody(paragraphs) {
   const out = [], seen = new Set();
   for (const f of found) {
     if (!f.text) continue;
+    if (!/\)$/.test(f.text) && found.some((g) => g !== f && g.text.startsWith(f.text + " ("))) continue;
     const key = (f.text.match(/\(([^)]+)\)$/) || [, f.text])[1].toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key); out.push(f);
