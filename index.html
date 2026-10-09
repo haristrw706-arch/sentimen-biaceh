@@ -737,8 +737,8 @@ $("postFile").addEventListener("change", (ev) => {
 /* ================= NARASUMBER DARI ISI BERITA (via /api/article di Vercel) ================= */
 const HAS_API = location.hostname.endsWith("vercel.app") || /^(localhost|127\.)/.test(location.hostname);
 const BODY = { cache: {}, inflight: new Set(), queue: [], active: 0, t: null };
-try { BODY.cache = JSON.parse(localStorage.getItem("bodySpk5") || "{}"); } catch (e) {}
-function saveBody() { try { const k = Object.keys(BODY.cache); if (k.length > 700) k.slice(0, k.length - 700).forEach((x) => delete BODY.cache[x]); localStorage.setItem("bodySpk5", JSON.stringify(BODY.cache)); } catch (e) {} }
+try { BODY.cache = JSON.parse(localStorage.getItem("bodySpk6") || "{}"); } catch (e) {}
+function saveBody() { try { const k = Object.keys(BODY.cache); if (k.length > 700) k.slice(0, k.length - 700).forEach((x) => delete BODY.cache[x]); localStorage.setItem("bodySpk6", JSON.stringify(BODY.cache)); } catch (e) {} }
 function speakerText(p) { const b = p.url && BODY.cache[p.url]; return (b && b.sp && b.sp.length ? b.sp.join(" ") + " " : "") + (p.speaker || ""); }
 function speakerCell(p) {
   if (!p.real) return p.speaker ? esc(p.speaker) : `<span class="muted">@${esc(p.author || "-")}</span>`;
@@ -775,7 +775,7 @@ function pumpBodies() {
     const p = BODY.queue.shift();
     const c = BODY.cache[p.url]; if ((c && !(c.r && Date.now() - c.r > 15 * 60000)) || BODY.inflight.has(p.url)) continue;
     BODY.active++; BODY.inflight.add(p.url);
-    fetch(`/api/article?v=5&url=${encodeURIComponent(p.url)}&title=${encodeURIComponent(p.text)}`)
+    fetch(`/api/article?v=6&url=${encodeURIComponent(p.url)}&title=${encodeURIComponent(p.text)}`)
       .then((r) => r.json())
       .then((d) => { BODY.cache[p.url] = { s: d.status, sp: (d.speakers || []).map((x) => x.text), m: d.method || "", ...(d.aiErr ? { r: Date.now() } : {}) }; })
       .catch(() => { BODY.cache[p.url] = { s: "error", sp: [] }; })
