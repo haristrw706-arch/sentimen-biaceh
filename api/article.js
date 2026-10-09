@@ -28,8 +28,6 @@ async function resolveGoogleNews(link) {
 const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’", ndash: "–", mdash: "—", hellip: "…" };
 function htmlToLines(html) {
   let h = html.replace(/<(script|style|noscript|svg|iframe|form|nav|footer|header|aside|figure|figcaption)[\s\S]*?<\/\1>/gi, " ");
-  const art = h.match(/<article[\s\S]*?<\/article>/i);
-  if (art && art[0].length > 1500) h = art[0];
   h = h.replace(/<br\s*\/?>|<(p|div|li|blockquote|h\d)(\s[^>]*)?>/gi, "\n").replace(/<\/(p|div|h\d|li|blockquote)>/gi, "\n").replace(/<[^>]+>/g, " ");
   h = h.replace(/&(#\d+|#x[\da-f]+|\w+);/gi, (m, e) => e[0] === "#" ? String.fromCharCode(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : +e.slice(1)) : ENT[e.toLowerCase()] ?? m);
   return h.split("\n").map((l) => l.replace(/[ \t ]+/g, " ").trim())
@@ -70,7 +68,7 @@ module.exports = async (req, res) => {
     try { const ai = await aiSpeakers(lines, title); if (ai) { speakers = ai; method = "AI"; } } catch (e) { /* jatuh ke aturan */ }
     if (!speakers.length) speakers = extractSpeakersFromBody(lines);
     res.setHeader("Cache-Control", "s-maxage=604800, stale-while-revalidate=86400");
-    return res.status(200).json({ status: lines.length ? "ok" : "empty", method, url, speakers, lead: (lines[0] || "").slice(0, 280) });
+    return res.status(200).json({ status: lines.length ? "ok" : "empty", method, url, speakers, lead: (lines[0] || "").slice(0, 280), ...(req.query.debug ? { lines } : {}) });
   } catch (e) {
     res.setHeader("Cache-Control", "s-maxage=600");
     return res.status(200).json({ status: "error", url, speakers: [], error: String(e.message || e) });
