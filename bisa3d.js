@@ -266,9 +266,9 @@
   function ownCounts(list, key) { const o = { n: 0, positif: 0, netral: 0, negatif: 0 }; for (const p of list) if (regionOf(p) === key) { o.n++; o[p.sentiment]++; } return o; }
 
   /* ---------- kamera & interaksi ---------- */
-  const VIEWS = { house: { t: [HX, 2.9, 0], r: 16, th: 0.62, ph: 1.12 }, map: { t: [0, 0, 0.3], r: 20, th: -0.83, ph: 0.74 } };
+  const VIEWS = { house: { t: [HX, 2.9, 0], r: 16, th: 0.62, ph: 1.12 }, map: { t: [0, 0, 0.3], r: 23, th: -0.83, ph: 0.74 } };
   const S = { t: new T.Vector3(...VIEWS.house.t), r: VIEWS.house.r, th: VIEWS.house.th, ph: VIEWS.house.ph };
-  let view = "house", fly = null, lastUser = 0, autoTimer = null;
+  let view = "house", fly = null, lastUser = 0, autoTimer = null, SCRUB = null, thOff = 0, phOff = 0;
   const tabs = [...sec.querySelectorAll(".b3d-tabs button")];
   function go(v, instant) {
     view = v; const V = v === "map" ? mapPreset() : VIEWS[v]; tabs.forEach((b) => b.setAttribute("aria-selected", String(b.dataset.v === v)));
@@ -279,9 +279,9 @@
     fly = { from: { t: S.t.clone(), r: S.r, th: S.th, ph: S.ph }, to, t0: performance.now(), dur: 2000 };
     if (v === "map") barMeshes.forEach((m) => (m.userData.grow = 0));
   }
-  const mapPreset = () => { const a = cv.clientWidth / Math.max(1, cv.clientHeight); return a < 1.25 ? { t: [0, 0, 3.4], r: 31 / Math.max(0.75, a), th: 0, ph: 0.6 } : a < 2.1 ? { t: [0.4, 0, 0.6], r: 23, th: -0.83, ph: 0.74 } : VIEWS.map; };
+  const mapPreset = () => { const a = cv.clientWidth / Math.max(1, cv.clientHeight); return a < 1.25 ? { t: [0, 0, 3.4], r: 31 / Math.max(0.75, a), th: 0, ph: 0.6 } : a < 2.1 ? { t: [0.4, 0, 0.6], r: 27, th: -0.83, ph: 0.74 } : VIEWS.map; };
   const aspectBoost = () => { const a = cv.clientWidth / Math.max(1, cv.clientHeight); return a < 1.1 ? 1.45 : a < 1.6 ? 1.15 : 1; };
-  tabs.forEach((b) => (b.onclick = () => { lastUser = performance.now(); clearTimeout(autoTimer); go(b.dataset.v); }));
+  tabs.forEach((b) => (b.onclick = () => { lastUser = performance.now(); clearTimeout(autoTimer); if (window.BISA3D_TAB) return window.BISA3D_TAB(b.dataset.v); go(b.dataset.v); }));
   sec.querySelector(".b3d-ctl").onclick = (e) => {
     const z = e.target.dataset && e.target.dataset.z; if (!z) return; lastUser = performance.now(); clearTimeout(autoTimer);
     if (z === "reset") return go(view);
@@ -295,14 +295,14 @@
     if (drag && e.pointerId === drag.id) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
       if (drag.moved > 4 && !drag.cap) { try { cv.setPointerCapture(drag.id); drag.cap = true; } catch (er) {} }
-      S.th -= dx * 0.006; if (drag.type === "mouse") S.ph = Math.max(0.32, Math.min(1.42, S.ph - dy * 0.004));
+      S.th -= dx * 0.006; thOff -= dx * 0.006; if (drag.type === "mouse") { S.ph = Math.max(0.32, Math.min(1.42, S.ph - dy * 0.004)); phOff = Math.max(-0.5, Math.min(0.5, phOff - dy * 0.004)); }
       lastUser = performance.now(); tip.hidden = true; return;
     }
     if (e.target === cv) hover(e);
   });
   addEventListener("pointerup", (e) => {
     if (!drag || e.pointerId !== drag.id) return; const click = drag.moved < 6; drag = null;
-    if (click && e.target === cv) { const n = pick(e); if (n && (stats[n] || n === REGION)) { if (view !== "map") go("map"); setRegion(n); } }
+    if (click && e.target === cv) { const n = pick(e); if (n && (stats[n] || n === REGION)) { if (view !== "map") { if (window.BISA3D_TAB) window.BISA3D_TAB("map"); else go("map"); } setRegion(n); } }
   });
   addEventListener("pointercancel", () => { drag = null; });
   cv.addEventListener("pointerleave", () => { if (!drag) { tip.hidden = true; setHover(null); } });
@@ -335,11 +335,22 @@
   /* ---------- loop ---------- */
   let running = false, visible = true, t0 = performance.now();
   function resize() { const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
-  new ResizeObserver(() => { resize(); if (!fly) go(view, true); }).observe(sec);
+  new ResizeObserver(() => { resize(); if (!fly && SCRUB === null) go(view, true); }).observe(sec);
   function frame(now) {
     if (!running) return; requestAnimationFrame(frame);
     const t = (now - t0) / 1000;
     if (fly) { const k = Math.min(1, (now - fly.t0) / fly.dur), e = ease(k); S.t.lerpVectors(fly.from.t, fly.to.t, e); S.r = fly.from.r + (fly.to.r - fly.from.r) * e; S.th = fly.from.th + (fly.to.th - fly.from.th) * e; S.ph = fly.from.ph + (fly.to.ph - fly.from.ph) * e + Math.sin(e * Math.PI) * -0.25; if (k >= 1) fly = null; }
+    else if (SCRUB !== null && !drag) {
+      const wide = cv.clientWidth / Math.max(1, cv.clientHeight) > 1.3, e = ease(Math.min(1, Math.max(0, (SCRUB - 0.08) / 0.84))), A = { t: [HX - (wide ? 7.5 : 0), wide ? 3.0 : 0.6, 0], r: wide ? 25 : 17, th: 0.62, ph: 1.12 }, B = mapPreset(), hb = aspectBoost();
+      if (!REDUCED && now - lastUser > 2500) thOff += 0.0012;
+      let bt = B.th; while (bt - A.th > Math.PI) bt -= 2 * Math.PI; while (A.th - bt > Math.PI) bt += 2 * Math.PI;
+      const q = [A.t[0] + (B.t[0] - A.t[0]) * e, A.t[1] + (B.t[1] - A.t[1]) * e, A.t[2] + (B.t[2] - A.t[2]) * e];
+      S.t.x += (q[0] - S.t.x) * 0.1; S.t.y += (q[1] - S.t.y) * 0.1; S.t.z += (q[2] - S.t.z) * 0.1;
+      S.r += (A.r * hb + (B.r - A.r * hb) * e - S.r) * 0.1; S.th += (A.th + (bt - A.th) * e + thOff - S.th) * 0.1;
+      S.ph += (Math.max(0.32, Math.min(1.42, A.ph + (B.ph - A.ph) * e - Math.sin(e * Math.PI) * 0.25 + phOff)) - S.ph) * 0.1;
+      const v2 = e < 0.5 ? "house" : "map";
+      if (v2 !== view) { view = v2; tabs.forEach((b) => b.setAttribute("aria-selected", String(b.dataset.v === v2))); document.getElementById("b3dCapMap").classList.toggle("hide", v2 !== "map"); if (v2 === "map") barMeshes.forEach((m) => (m.userData.grow = 0)); }
+    }
     else if (!REDUCED && !drag && now - lastUser > 4000) S.th += 0.0016;
     const sp = Math.sin(S.ph);
     cam.position.set(S.t.x + S.r * sp * Math.sin(S.th), S.t.y + S.r * Math.cos(S.ph), S.t.z + S.r * sp * Math.cos(S.th)); cam.lookAt(S.t);
@@ -360,7 +371,8 @@
   document.addEventListener("visibilitychange", setRun);
   resize(); update(); go(REDUCED ? "map" : "house", true); setRun();
   // intro: Rumoh Aceh dulu, lalu kamera terbang ke peta sentimen
-  if (!REDUCED) autoTimer = setTimeout(() => { if (performance.now() - lastUser > 3000) go("map"); }, 4200);
+  if (!REDUCED) autoTimer = setTimeout(() => { if (SCRUB === null && performance.now() - lastUser > 3000) go("map"); }, 4200);
+  window.BISA3D = { setScrub: (p) => { SCRUB = p; }, update: () => update(), go: (v) => go(v) };
 
   /* ---------- efek 3D di seluruh dashboard ---------- */
   if (!REDUCED) {
