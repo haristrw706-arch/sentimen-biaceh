@@ -19,6 +19,7 @@
   st.textContent = `
 :root{--serif:"Instrument Serif",Georgia,serif;--glass:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,.02));--glass-line:rgba(255,255,255,.1)}
 html[data-theme="dark"] body{background:#040b18;background-image:radial-gradient(60vw 50vh at 85% 8%,rgba(47,111,208,.22),transparent 70%),radial-gradient(50vw 45vh at 5% 40%,rgba(240,180,41,.08),transparent 70%),radial-gradient(70vw 60vh at 50% 110%,rgba(18,72,154,.25),transparent 70%);background-attachment:fixed}
+html,body{overflow-x:clip}
 #bgfx{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.85}
 header.top,main.wrap,.foot,.toast,.modal-bg{position:relative;z-index:1}
 header.top{background:rgba(4,11,24,.62)!important;backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border-bottom:1px solid rgba(240,180,41,.55)!important;z-index:6}
